@@ -23,8 +23,12 @@ export function AppShell() {
     const [focusNavigationRevealed, setFocusNavigationRevealed] = useState(false);
     const [blockedNoticeOpen, setBlockedNoticeOpen] = useState(false);
     const [shakeSideNav, setShakeSideNav] = useState(false);
+    const [totalFocusRequested, setTotalFocusRequested] = useState(false);
     const { activePomodoro } = usePomodoro();
     const focusNavigationLocked = isFocusNavigationLocked(activePomodoro);
+    const totalFocusAvailable = Boolean(activePomodoro?.active);
+    // Total focus only lasts while a pomodoro runs; when it ends the navigation comes back on its own.
+    const totalFocus = totalFocusRequested && totalFocusAvailable;
     const focusNavigationLockedRef = useRef(focusNavigationLocked);
     focusNavigationLockedRef.current = focusNavigationLocked;
     const shakeTimeoutRef = useRef<number | null>(null);
@@ -35,9 +39,9 @@ export function AppShell() {
             || currentLocation.hash !== nextLocation.hash)
     ));
     const focusBlockerState = focusBlocker.state;
-    const navigationIsVisible = focusNavigationLocked
+    const navigationIsVisible = !totalFocus && (focusNavigationLocked
         ? focusNavigationRevealed
-        : navigationVisible;
+        : navigationVisible);
     const setPageNavigationVisible = useCallback((visible: boolean) => {
         if (!focusNavigationLockedRef.current) setNavigationVisible(visible);
     }, []);
@@ -65,7 +69,10 @@ export function AppShell() {
         visible: navigationIsVisible,
         focusLocked: focusNavigationLocked,
         setVisible: setPageNavigationVisible,
-    }), [focusNavigationLocked, navigationIsVisible, setPageNavigationVisible]);
+        totalFocusAvailable,
+        totalFocus,
+        setTotalFocus: setTotalFocusRequested,
+    }), [focusNavigationLocked, navigationIsVisible, setPageNavigationVisible, totalFocus, totalFocusAvailable]);
 
     return (
         <NavigationVisibilityContext.Provider value={navigationContext}>
@@ -80,7 +87,7 @@ export function AppShell() {
                     <SideNav />
                     <ActivityTimerAlert />
                 </Box>
-                {focusNavigationLocked && !focusNavigationRevealed && (
+                {focusNavigationLocked && !focusNavigationRevealed && !totalFocus && (
                     <IconButton
                         aria-label="Show navigation"
                         title="Show navigation"

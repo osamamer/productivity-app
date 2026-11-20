@@ -31,8 +31,8 @@ export function ScreenTimeCard({ overview, windowStart, windowEnd }: ScreenTimeC
         const apps = range?.apps ?? {};
         return {
             now,
-            planned: buildPlannedLane(plannedItems(overview, new Date(start), new Date(end), now, activities ?? []), start, end),
-            did: buildPlannedLane(didItems(overview.activitySessions ?? [], activities ?? [], now), start, end),
+            planned: buildPlannedLane(plannedItems(overview, new Date(start), new Date(end), activities ?? []), start, end),
+            did: buildPlannedLane(didItems(overview.activitySessions ?? [], activities ?? [], now, overview.focusSessions), start, end),
             screen: buildScreenLane({ segments: range?.segments ?? [], tracked: range?.tracked ?? [], nameOf: appId => apps[appId]?.name ?? appId }, start, end, now),
         };
     }, [overview, range, start, end, activities]);

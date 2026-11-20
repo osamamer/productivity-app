@@ -6,12 +6,12 @@ import { activityHex } from '../activity/activityColors';
 import { PlannedInput } from './dayTimelineLayout';
 
 /**
- * What the day was meant to hold: timed calendar events (coloured by activity when they are
- * chunks), and focus sessions, which are a
- * stated intention to work on one task. All-day and cancelled events have no place on a
- * time axis.
+ * What the day was meant to hold: timed calendar events, coloured by activity when they are
+ * chunks. Focus sessions are what actually happened, so they sit in the "Did" lane instead
+ * (see didItems), which lets a planned chunk be compared with the time it really took. All-day
+ * and cancelled events have no place on a time axis.
  */
-export function plannedItems(overview: DayOverview, windowStart: Date, windowEnd: Date, now: number, activities: Activity[] = []): PlannedInput[] {
+export function plannedItems(overview: DayOverview, windowStart: Date, windowEnd: Date, activities: Activity[] = []): PlannedInput[] {
     const activitiesById = new Map(activities.map(activity => [activity.id, activity]));
     const events = overview.events.flatMap(event => {
         const activity = event.activityId ? activitiesById.get(event.activityId) : undefined;
@@ -26,12 +26,5 @@ export function plannedItems(overview: DayOverview, windowStart: Date, windowEnd
                 ...(activity ? { activityName: activity.name, color: activityHex(activity.color, '') } : {}),
             }));
     });
-    const focus = overview.focusSessions.map((session): PlannedInput => ({
-        id: `focus-${session.id}`,
-        kind: 'focus',
-        title: session.taskName || 'Focus session',
-        start: parseISO(session.startTime).getTime(),
-        end: session.endTime ? parseISO(session.endTime).getTime() : now,
-    }));
-    return [...events, ...focus].filter(item => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start);
+    return events.filter(item => Number.isFinite(item.start) && Number.isFinite(item.end) && item.end > item.start);
 }

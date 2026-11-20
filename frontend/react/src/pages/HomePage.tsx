@@ -50,6 +50,8 @@ import { useUser } from '../hooks/useUser';
 import { LeisureHome } from '../components/leisure/LeisureHome';
 import { homeGreeting } from './home/homeGreeting';
 import { HomeModeSwitch } from './home/HomeModeSwitch';
+import { TotalFocusToggle } from '../components/focus/TotalFocusToggle';
+import { TotalFocusStage } from '../components/focus/TotalFocusStage';
 import { useNavigationVisibility } from '../components/appShellNavigation';
 import { useHomeMode } from './home/homeMode';
 import { SmartTaskInput } from '../components/input/SmartTaskInput';
@@ -4568,6 +4570,15 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
         </ButtonBase>
     ) : null;
     const dragInProgress = draggedTaskIds.length > 0 || draggedGroupId !== null;
+    const totalFocus = useNavigationVisibility()?.totalFocus ?? false;
+
+    if (totalFocus) {
+        return (
+            <TotalFocusStage header={modeSwitch}>
+                {activePomodoroTask && renderTaskRow(activePomodoroTask)}
+            </TotalFocusStage>
+        );
+    }
 
     return (
         <PageWrapper>
@@ -5367,9 +5378,21 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
 /** Home: labor (tasks and pomodoros) by default, or leisure (today's plan and an activity timer). */
 export function HomePage() {
     const [mode, setMode] = useHomeMode();
+    const navigation = useNavigationVisibility();
+    const focusLocked = navigation?.focusLocked ?? false;
+    const setTotalFocus = navigation?.setTotalFocus;
+    const totalFocus = Boolean(navigation?.totalFocus) && mode === 'labor';
+    // Total focus belongs to the labor view, where the pomodoro is; leisure must not keep the navigation hidden.
+    useEffect(() => {
+        if (mode === 'leisure') setTotalFocus?.(false);
+    }, [mode, setTotalFocus]);
     // Changing mode is navigation, which a running focus session blocks, so the switch steps aside.
-    const focusLocked = useNavigationVisibility()?.focusLocked ?? false;
-    const modeSwitch = focusLocked ? null : <HomeModeSwitch mode={mode} onChange={setMode} />;
+    const focusToggle = mode === 'labor' && navigation?.totalFocusAvailable
+        ? <TotalFocusToggle active={totalFocus} onChange={on => setTotalFocus?.(on)} />
+        : null;
+    const modeSwitch = focusLocked || totalFocus
+        ? (focusToggle ? <HomeModeSwitch leading={focusToggle} /> : null)
+        : <HomeModeSwitch mode={mode} onChange={setMode} leading={focusToggle} />;
     return mode === 'leisure' ? <LeisureHome modeSwitch={modeSwitch} /> : <LaborHome modeSwitch={modeSwitch} />;
 }
 

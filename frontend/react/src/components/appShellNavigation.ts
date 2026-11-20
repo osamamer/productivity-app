@@ -4,6 +4,11 @@ interface NavigationVisibilityContextValue {
     visible: boolean;
     focusLocked: boolean;
     setVisible: (visible: boolean) => void;
+    // A pomodoro is running, so total focus can be switched on.
+    totalFocusAvailable: boolean;
+    // Total focus hides the navigation completely and lets the focus timer take the whole screen.
+    totalFocus: boolean;
+    setTotalFocus: (on: boolean) => void;
 }
 
 export const NavigationVisibilityContext = createContext<NavigationVisibilityContextValue | null>(null);

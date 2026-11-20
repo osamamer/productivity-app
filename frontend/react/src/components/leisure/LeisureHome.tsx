@@ -1,10 +1,9 @@
 import { ReactNode, useMemo, useState } from 'react';
-import { Alert, Box, Skeleton, TextField, Typography } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
+import { Alert, Box, Skeleton, Snackbar, TextField, Typography } from '@mui/material';
 import { format } from 'date-fns';
 import { PageWrapper } from '../PageWrapper';
 import { ActivitySuggestions } from '../activity/ActivitySuggestions';
-import { ACTIVITY_COLOR_ORDER, activityHex } from '../activity/activityColors';
+import { ACTIVITY_COLOR_ORDER } from '../activity/activityColors';
 import { useActivities } from '../../hooks/useActivities';
 import { useActivityTimer, useNow } from '../../hooks/useActivityTimer';
 import { useDayOverview } from '../../hooks/useDayOverview';
@@ -13,6 +12,7 @@ import { activityStore } from '../../services/cache/activityStore';
 import { activityTimerStore } from '../../services/cache/activityTimerStore';
 import { Activity, ActivityInput } from '../../types/Activity';
 import { ActivitySession } from '../../types/ActivitySession';
+import { formatScreenDuration } from '../day/screenTimeText';
 import { homeGreeting } from '../../pages/home/homeGreeting';
 import { ActivityDetailsPanel } from './ActivityDetailsPanel';
 import { LeisurePanel, LeisureRow } from './LeisureRow';
@@ -20,6 +20,7 @@ import { LeisureStartPanel } from './LeisureStartPanel';
 import { LeisureTimerPanel } from './LeisureTimerPanel';
 import { TimedTodayList } from './TimedTodayList';
 import { timerClock } from './timerClock';
+import { timeByActivity } from './leisureTime';
 
 const MINUTE = 60_000;
 
@@ -56,7 +57,6 @@ function AddActivityInput({ count, onError }: { count: number; onError: (message
 
 /** The leisure side of Home: your activities as rows, each with a timer drawn like the Home pomodoro. */
 export function LeisureHome({ modeSwitch }: { modeSwitch: ReactNode }) {
-    const theme = useTheme();
     const { user } = useUser();
     const { current: session, loaded } = useActivityTimer();
     const now = useNow(true, session && !session.paused ? 1000 : 30_000);
@@ -64,6 +64,7 @@ export function LeisureHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     const activities = useActivities();
     const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
     const [error, setError] = useState<string | null>(null);
+    const [notice, setNotice] = useState<string | null>(null);
 
     const sessions = useMemo(() => {
         const listed = overview?.activitySessions ?? [];
@@ -90,21 +91,27 @@ export function LeisureHome({ modeSwitch }: { modeSwitch: ReactNode }) {
         setOpenPanel(null);
     };
 
-    const timerPanel = (running: ActivitySession, label: string) =>
-        <LeisureTimerPanel session={running} clock={timerClock(running, now)} label={label} />;
+    const timerPanel = (running: ActivitySession) =>
+        <LeisureTimerPanel
+            session={running}
+            clock={timerClock(running, now)}
+            onStopped={elapsedMs => setNotice(`Logged ${formatScreenDuration(elapsedMs)} to ${running.title}.`)}
+        />;
+
+    const todayByActivity = useMemo(() => new Map(
+        timeByActivity(sessions, now).map(total => [total.activityId, total.ms] as const),
+    ), [sessions, now]);
 
     const renderActivity = (activity: Activity) => {
         const running = session?.activityId === activity.id ? session : null;
         const panel = openPanel?.activityId === activity.id ? openPanel.panel : null;
-        const clock = running ? timerClock(running, now) : null;
+        const todayMs = todayByActivity.get(activity.id) ?? 0;
         return (
             <LeisureRow
                 key={activity.id}
                 title={activity.name}
-                color={activityHex(activity.color, theme.palette.text.secondary)}
+                subtitle={todayMs > 0 ? `${formatScreenDuration(todayMs)} today` : null}
                 active={Boolean(running)}
-                paused={running?.paused}
-                progress={clock?.progress ?? null}
                 panel={panel}
                 onTogglePanel={next => togglePanel(activity.id, next)}
                 timerDisabled={Boolean(session) && !running}
@@ -117,7 +124,7 @@ export function LeisureHome({ modeSwitch }: { modeSwitch: ReactNode }) {
                     </Box>
                 )}
                 {running
-                    ? timerPanel(running, activity.name)
+                    ? timerPanel(running)
                     : panel === 'timer' && <LeisureStartPanel defaultMinutes={0} onStart={start(activity)} />}
             </LeisureRow>
         );
@@ -162,16 +169,8 @@ export function LeisureHome({ modeSwitch }: { modeSwitch: ReactNode }) {
                     ) : (
                         <>
                             {orphan && (
-                                <LeisureRow
-                                    title={orphan.title}
-                                    color={null}
-                                    active
-                                    paused={orphan.paused}
-                                    progress={timerClock(orphan, now).progress}
-                                    panel={null}
-                                    onTogglePanel={() => undefined}
-                                >
-                                    {timerPanel(orphan, 'Timing')}
+                                <LeisureRow title={orphan.title} active panel={null} onTogglePanel={() => undefined}>
+                                    {timerPanel(orphan)}
                                 </LeisureRow>
                             )}
                             {activities.map(renderActivity)}
@@ -184,6 +183,14 @@ export function LeisureHome({ modeSwitch }: { modeSwitch: ReactNode }) {
                         </>
                     )}
                 </Box>
+                <Snackbar
+                    open={notice !== null}
+                    autoHideDuration={4000}
+                    onClose={() => setNotice(null)}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+                >
+                    <Alert severity="success" variant="filled" onClose={() => setNotice(null)}>{notice}</Alert>
+                </Snackbar>
             </Box>
         </PageWrapper>
     );

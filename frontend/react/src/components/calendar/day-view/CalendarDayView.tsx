@@ -56,13 +56,13 @@ export function CalendarDayView({ date, onChangeDate, onShowGrid, onCreateEvent 
         // `range` changes every refresh, which is when "now" should move too.
         const now = Date.now();
         const apps = range?.apps ?? {};
-        const planned = buildPlannedLane(plannedItems(overview, new Date(start), new Date(end), now, activities ?? []), start, end);
+        const planned = buildPlannedLane(plannedItems(overview, new Date(start), new Date(end), activities ?? []), start, end);
         const sessions = overview.activitySessions ?? [];
         const timed = runningTimer && !sessions.some(session => session.id === runningTimer.id) ? [...sessions, runningTimer] : sessions;
         return {
             now,
             planned,
-            did: buildPlannedLane(didItems(timed, activities ?? [], now), start, end),
+            did: buildPlannedLane(didItems(timed, activities ?? [], now, overview.focusSessions), start, end),
             plannedMs: planned.reduce((total, block) => total + block.end - block.start, 0),
             screen: buildScreenLane({ segments: range?.segments ?? [], tracked: range?.tracked ?? [], nameOf: appId => apps[appId]?.name ?? appId }, start, end, now),
         };

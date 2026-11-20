@@ -1,24 +1,32 @@
 import { useState } from 'react';
-import { Box, IconButton, Tooltip, Typography } from '@mui/material';
+import { Box, IconButton, LinearProgress, Tooltip, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
+import { format } from 'date-fns';
 import { activityTimerStore } from '../../services/cache/activityTimerStore';
-import { ActivitySession } from '../../types/ActivitySession';
+import { ActivitySession, sessionElapsedMs } from '../../types/ActivitySession';
 import { TIMER_DIGITS_SX } from '../timer/timerDigits';
 import { WhiteNoiseControl } from '../timer/WhiteNoiseControl';
+import { formatScreenDuration } from '../day/screenTimeText';
 import { formatClock } from './leisureTime';
 import { TimerClock } from './timerClock';
 
 /** The running timer laid out like the Home pomodoro panel, without focus sessions. */
-export function LeisureTimerPanel({ session, clock, label }: { session: ActivitySession; clock: TimerClock; label: string }) {
+export function LeisureTimerPanel({ session, clock, onStopped }: {
+    session: ActivitySession;
+    clock: TimerClock;
+    // Called once the timer is stopped, with how long it ran, so the page can confirm it.
+    onStopped: (elapsedMs: number) => void;
+}) {
     const theme = useTheme();
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const restColor = theme.palette.mode === 'dark' ? '#9BC5A3' : '#7EA88A';
     const timeUp = clock.remainingMs !== null && clock.remainingMs <= 0;
-    const caption = session.paused ? 'Paused' : timeUp ? "Time's up" : label;
+    const endsAt = session.targetEndAt ? format(Date.parse(session.targetEndAt), 'h:mm a') : null;
+    const caption = session.paused ? 'Paused' : timeUp ? "Time's up" : endsAt ? `Ends ${endsAt}` : 'Running';
     const playPauseLabel = session.paused ? 'Resume timer' : 'Pause timer';
 
     const act = async (action: () => Promise<void>, failure: string) => {
@@ -85,7 +93,11 @@ export function LeisureTimerPanel({ session, clock, label }: { session: Activity
                                 color="inherit"
                                 aria-label="Stop timer"
                                 disabled={busy}
-                                onClick={() => void act(() => activityTimerStore.end(session), 'Could not stop the timer.')}
+                                onClick={() => void act(async () => {
+                                    const elapsedMs = sessionElapsedMs(session, Date.now());
+                                    await activityTimerStore.end(session);
+                                    onStopped(elapsedMs);
+                                }, 'Could not stop the timer.')}
                                 sx={{
                                     color: 'error.light',
                                     '&:hover': { color: 'error.main', backgroundColor: alpha(theme.palette.error.main, 0.08) },
@@ -97,6 +109,19 @@ export function LeisureTimerPanel({ session, clock, label }: { session: Activity
                     </Tooltip>
                 </Box>
             </Box>
+            {clock.progress !== null && (
+                <Box sx={{ mt: 1.5 }}>
+                    <LinearProgress
+                        variant="determinate"
+                        value={clock.progress}
+                        aria-label="Share of the countdown used"
+                        sx={{ height: 4, borderRadius: 2, backgroundColor: 'action.hover', '& .MuiLinearProgress-bar': { backgroundColor: session.paused ? restColor : theme.palette.primary.main } }}
+                    />
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, textAlign: 'left' }}>
+                        {timeUp ? 'Finished' : `${formatScreenDuration(Math.max(0, clock.remainingMs ?? 0))} left`}
+                    </Typography>
+                </Box>
+            )}
             {error && <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1, textAlign: 'left' }}>{error}</Typography>}
         </Box>
     );

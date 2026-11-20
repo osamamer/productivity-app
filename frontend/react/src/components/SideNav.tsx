@@ -40,7 +40,11 @@ import { mentalStateService } from '../services/api/mentalStateService';
 const COLLAPSED_WIDTH = 60;
 const EXPANDED_WIDTH = 260;
 const SIDE_NAV_STORAGE_KEY = 'claritard.sideNav.expanded';
-const DRAWER_TRANSITION_MS = 220;
+const DRAWER_TRANSITION_MS = 280;
+// Lays the drawer out at its expanded width at all times and lets the paper clip it. Animating the
+// width of content that reflows (wrapping labels, rows that change size) re-lays out the whole page
+// every frame, which is what made the lock and unlock stutter.
+const DRAWER_CONTENT_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 
 const iconRailSx = {
     width: COLLAPSED_WIDTH,
@@ -425,10 +429,7 @@ export function SideNav() {
     }, [closeDrawer, location.pathname, navigate]);
 
     const drawerWidth = isMobile ? EXPANDED_WIDTH : (open ? EXPANDED_WIDTH : COLLAPSED_WIDTH);
-    const drawerTransition = theme.transitions.create('width', {
-        duration: DRAWER_TRANSITION_MS,
-        easing: theme.transitions.easing.easeInOut,
-    });
+    const drawerTransition = `width ${DRAWER_TRANSITION_MS}ms ${DRAWER_CONTENT_EASING}`;
     const pomodoroGreen = theme.palette.mode === 'dark' ? '#9BC5A3' : '#7EA88A';
     const pomodoroIsFocusRunning = Boolean(
         activePomodoro?.active
@@ -496,7 +497,7 @@ export function SideNav() {
                     },
                 }}
             >
-                <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, width: EXPANDED_WIDTH, flexShrink: 0 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', minHeight: 56 }}>
                         <Box sx={{ width: COLLAPSED_WIDTH, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
                             <IconButton
