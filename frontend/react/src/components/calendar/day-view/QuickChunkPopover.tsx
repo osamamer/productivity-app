@@ -79,8 +79,7 @@ function TaskChoiceRow({ task, onSelect }: { task: Task; onSelect: (task: Task) 
                 px: 1,
                 py: 0.5,
                 borderRadius: 1,
-                backgroundColor: tint ? alpha(tint, 0.1) : 'transparent',
-                '&:hover': { backgroundColor: tint ? alpha(tint, 0.18) : alpha(theme.palette.primary.main, 0.08) },
+                '&:hover': { backgroundColor: tint ? alpha(tint, 0.14) : alpha(theme.palette.primary.main, 0.08) },
             })}
         >
             <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>{task.name}</Typography>
