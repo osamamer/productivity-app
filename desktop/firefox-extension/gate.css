@@ -71,3 +71,8 @@ button {
 }
 button:disabled { opacity: 0.4; cursor: default; }
 .footnote { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+
+.done .ring,
+.done #open {
+  display: none;
+}

@@ -9,25 +9,29 @@ import { Screen } from '@/components/ui/Screen';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { Boundaries } from '@/services/boundaries';
 import { PasswordField } from './PasswordField';
+import { usePasswordWait } from './usePasswordWait';
 
 /**
- * Asks for the unlock password every time Boundaries is opened or brought back to the
- * foreground. Enforcement keeps running in the background whether or not this is showing.
+ * Asks for the unlock password, then a ten second wait, every time Boundaries is opened or
+ * brought back to the foreground. Enforcement keeps running in the background whether or not
+ * this is showing.
  */
 export function BoundariesLock({ onUnlocked }: { onUnlocked: () => void }) {
   const { colors } = useAppTheme();
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const wait = usePasswordWait();
 
   const submit = async () => {
+    if (wait.waiting) return;
     if (!password) return setError('Enter your unlock password.');
     setBusy(true);
     setError(null);
     try {
       if (await Boundaries?.verifyUnlockPassword(password)) {
         setPassword('');
-        onUnlocked();
+        wait.start(onUnlocked);
       } else {
         setError('Incorrect password.');
       }
@@ -42,11 +46,23 @@ export function BoundariesLock({ onUnlocked }: { onUnlocked: () => void }) {
         <Ionicons name="lock-closed-outline" size={30} color={colors.accent} />
       </View>
       <AppText variant="display" style={styles.center}>Boundaries are locked</AppText>
-      <AppText color="muted" style={styles.center}>Enter your unlock password to view or change them.</AppText>
+      <AppText color="muted" style={styles.center}>Enter your unlock password, then wait ten seconds, to view or change them.</AppText>
       <Card style={{ gap: 12 }}>
-        <PasswordField value={password} onChangeText={setPassword} placeholder="Unlock password" autoFocus editable={!busy} onSubmitEditing={() => void submit()} />
+        <PasswordField
+          value={password}
+          onChangeText={setPassword}
+          placeholder="Unlock password"
+          autoFocus
+          editable={!busy && !wait.waiting}
+          onSubmitEditing={() => void submit()}
+        />
         {error ? <AppText variant="caption" color="danger">{error}</AppText> : null}
-        <AppButton label="Unlock" loading={busy} onPress={() => void submit()} />
+        <AppButton
+          label={wait.waiting ? `Unlocking in ${wait.remaining} s` : 'Unlock'}
+          loading={busy}
+          disabled={wait.waiting}
+          onPress={() => void submit()}
+        />
       </Card>
     </Screen>
   );

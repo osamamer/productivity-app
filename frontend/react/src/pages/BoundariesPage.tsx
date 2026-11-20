@@ -3,28 +3,36 @@ import { Alert, Box, Snackbar, Typography } from '@mui/material';
 import { Navigate } from 'react-router-dom';
 import { AppPausesSection } from '../components/boundaries/AppPausesSection';
 import { SiteTimersSection } from '../components/boundaries/SiteTimersSection';
-import { desktopTimeouts, type TimeoutState } from '../services/desktop';
+import { BoundaryEditLockCard } from '../components/boundaries/BoundaryEditLockCard';
+import { useBoundaryEditLock } from '../components/boundaries/useBoundaryEditLock';
+import { desktopTimeouts, type DesktopTimeouts, type TimeoutState } from '../services/desktop';
 
 const REFRESH_MS = 5000;
 
 type Notice = { severity: 'success' | 'error'; message: string };
 
-/** App pauses and Firefox site timers, a tab of Digital wellbeing. Only the Linux desktop app can enforce them. */
+/** App pauses, daily limits and Firefox site timers, a tab of Digital wellbeing. Only the Linux desktop app can enforce them. */
 export function BoundariesPage() {
+    if (!desktopTimeouts) return <Navigate to="/wellbeing" replace />;
+    return <Boundaries timeouts={desktopTimeouts} />;
+}
+
+function Boundaries({ timeouts }: { timeouts: DesktopTimeouts }) {
     const [state, setState] = useState<TimeoutState | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [notice, setNotice] = useState<Notice | null>(null);
 
+    const editLock = useBoundaryEditLock(timeouts);
+
     const refresh = useCallback(async () => {
-        if (!desktopTimeouts) return;
         try {
-            setState(await desktopTimeouts.getState());
+            setState(await timeouts.getState());
             setLoadError(null);
         } catch (error) {
             console.error('Could not load app timeouts:', error);
             setLoadError(error instanceof Error ? error.message : String(error));
         }
-    }, []);
+    }, [timeouts]);
 
     useEffect(() => {
         void refresh();
@@ -39,7 +47,7 @@ export function BoundariesPage() {
     }, [refresh]);
     const onError = useCallback((message: string) => setNotice({ severity: 'error', message }), []);
 
-    if (!desktopTimeouts) return <Navigate to="/wellbeing" replace />;
+    const locked = !editLock.editable;
 
     return (
         <>
@@ -51,8 +59,9 @@ export function BoundariesPage() {
 
             {state && (
                 <Box sx={{ display: 'grid', gap: 3 }}>
-                    <AppPausesSection apps={state.apps} timeouts={desktopTimeouts} onChanged={onChanged} onError={onError} />
-                    <SiteTimersSection urls={state.urls} browser={state.browser} timeouts={desktopTimeouts} onChanged={onChanged} onError={onError} />
+                    <BoundaryEditLockCard lock={editLock} onError={onError} />
+                    <AppPausesSection apps={state.apps} timeouts={timeouts} locked={locked} onChanged={onChanged} onError={onError} />
+                    <SiteTimersSection urls={state.urls} browser={state.browser} timeouts={timeouts} locked={locked} onChanged={onChanged} onError={onError} />
                 </Box>
             )}
 

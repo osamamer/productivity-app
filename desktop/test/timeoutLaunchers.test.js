@@ -114,7 +114,7 @@ test('a Firefox session starts with the first granted URL and later grants share
     const config = { ...emptyConfig(), urls: { 'https://youtube.com/': rule } };
     const response = browserRulesResponse(config, paths);
     assert.deepEqual(response.unlocked, ['https://youtube.com/', 'https://reddit.com/']);
-    assert.deepEqual(response.rules, [{ url: 'https://youtube.com/', delay: 30, duration: 900, message: 'Take a breath.' }]);
+    assert.deepEqual(response.rules, [{ url: 'https://youtube.com/', delay: 30, duration: 900, dailyLimit: 0, usedToday: 0, message: 'Take a breath.' }]);
 });
 
 test('once a Firefox session has run out, no URL can be granted until Firefox has closed', () => {

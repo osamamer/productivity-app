@@ -54,12 +54,20 @@ function tick() {
   hint.textContent = remaining ? "Keep this tab active until the countdown ends." : "Ready when you are.";
 }
 
+function showDone() {
+  document.body.classList.add("done");
+  document.getElementById("eyebrow").textContent = "Done for today";
+  document.getElementById("message").textContent = "This site's daily time is used up.";
+  hint.textContent = "It opens again tomorrow.";
+}
+
 open.addEventListener("click", async () => {
   if (!rule || !active() || deadline === null || performance.now() < deadline || busy) return;
   busy = true;
   open.disabled = true;
   const result = await browser.runtime.sendMessage({type: "grant", url});
   if (result.error) {
+    if (result.done) { showDone(); return; }
     error.textContent = result.error;
     busy = false;
     return;
@@ -72,6 +80,7 @@ browser.runtime.sendMessage({type: "rule", url}).then(result => {
   if (result.error) { error.textContent = result.error; return; }
   rule = result;
   if (rule.unlocked) { location.replace(url); return; }
+  if (rule.dailyLimit && rule.usedToday >= rule.dailyLimit) { showDone(); return; }
   document.getElementById("message").textContent = rule.message;
   tick();
   setInterval(tick, 100);

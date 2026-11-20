@@ -4,11 +4,14 @@ const path = require('node:path');
 const { withFileLock } = require('./fileLock');
 const { which } = require('./appTarget');
 const { runningProcesses, endSession } = require('./processes');
+const { readDailyUsage, addDailyUsage, startOfLocalDay, remainingSeconds } = require('./dailyUsage');
 
 /**
- * One Firefox session opened through a URL timer: `{ id, startedAt, deadline, name, rules, target }`.
+ * One Firefox session opened through a URL timer:
+ * `{ id, startedAt, deadline, name, rules, grants: {url: grantedAt}, target }`.
  * Times are epoch seconds. Every timed URL granted during the session shares its deadline,
  * and the file outlives Firefox, so closing and reopening Firefox does not reset the time.
+ * A URL's time counts toward its daily limit from its grant until the session's deadline.
  */
 function readSession(paths) {
     try {
@@ -52,35 +55,67 @@ function firefoxTarget(home, env = process.env) {
     return { executable: fs.realpathSync(executable) };
 }
 
+function grantedAt(session, url) {
+    return session.grants?.[url] ?? session.startedAt;
+}
+
+/** Seconds of `session` that count toward `url`'s limit today, up to `nowSec`. */
+function liveSecondsToday(session, url, nowSec) {
+    if (!session?.rules.includes(url)) return 0;
+    const from = Math.max(grantedAt(session, url), startOfLocalDay(nowSec * 1000) / 1000);
+    return Math.max(0, Math.min(nowSec, session.deadline) - from);
+}
+
+/** Seconds `url` has been open today, counting the running session. */
+function urlSecondsToday(paths, url, session = readSession(paths), nowSec = nowSeconds()) {
+    return (readDailyUsage(paths, nowSec * 1000).urls[url] ?? 0) + liveSecondsToday(session, url, nowSec);
+}
+
+function dailyLimitReached(url) {
+    const site = url.replace(/^https?:\/\//, '');
+    return Object.assign(new Error(`The daily limit for ${site} is used up. It opens again tomorrow.`), { code: 'daily-limit' });
+}
+
 /**
  * Unlocks `url` for the current Firefox session, starting one with the rule's duration if none
- * is running. Returns `{ session, created }`.
+ * is running. A daily limit can bring the session's deadline forward. Returns
+ * `{ session, created, shortened }`.
  */
 function grantBrowserRule(paths, url, rule) {
     return withFileLock(paths.browserLockFile, () => {
         const session = readSession(paths);
-        if (session && session.deadline <= nowSeconds()) {
+        const now = nowSeconds();
+        if (session && session.deadline <= now) {
             throw new Error('The Firefox timer has ended. Wait for Firefox to close, then reopen it.');
         }
+        if (session?.rules.includes(url)) return { session, created: false, shortened: false };
+        const left = remainingSeconds(rule.dailyLimitSeconds ?? 0, urlSecondsToday(paths, url, session, now));
+        if (left <= 0) throw dailyLimitReached(url);
         if (session) {
-            if (!session.rules.includes(url)) {
-                session.rules.push(url);
-                writeSession(paths, session);
-            }
-            return { session, created: false };
+            session.rules.push(url);
+            session.grants = { ...session.grants, [url]: now };
+            const shortened = now + left < session.deadline;
+            if (shortened) session.deadline = now + left;
+            writeSession(paths, session);
+            return { session, created: false, shortened };
         }
-        const startedAt = nowSeconds();
         const created = {
             id: crypto.randomBytes(8).toString('hex'),
-            startedAt,
-            deadline: startedAt + rule.closeAfterSeconds,
+            startedAt: now,
+            deadline: now + Math.min(rule.closeAfterSeconds, left),
             name: url,
             rules: [url],
+            grants: { [url]: now },
             target: firefoxTarget(paths.home),
         };
         writeSession(paths, created);
-        return { session: created, created: true };
+        return { session: created, created: true, shortened: false };
     });
+}
+
+/** Adds an ended session's time to each of its URLs' daily usage. */
+function recordSessionUsage(paths, session) {
+    for (const url of session.rules) addDailyUsage(paths, 'urls', url, liveSecondsToday(session, url, session.deadline));
 }
 
 /**
@@ -93,19 +128,28 @@ async function expireBrowser(paths, id) {
     const target = { ...session.target, anyProfile: true };
     await endSession(target, runningProcesses(target));
     withFileLock(paths.browserLockFile, () => {
-        if (readSession(paths)?.id === id) fs.rmSync(paths.browserSessionFile, { force: true });
+        const current = readSession(paths);
+        if (current?.id !== id) return;
+        recordSessionUsage(paths, current);
+        fs.rmSync(paths.browserSessionFile, { force: true });
     });
     return true;
 }
 
-/** What the Firefox extension needs: the timers, and which are unlocked until when. */
+/**
+ * What the Firefox extension needs: the timers, how much of each daily limit is used (a hint
+ * for the gate page; granting checks again), and which are unlocked until when.
+ */
 function browserRulesResponse(config, paths) {
     const session = activeSession(paths);
+    const current = readSession(paths);
     return {
         rules: Object.entries(config.urls).map(([url, rule]) => ({
             url,
             delay: rule.delaySeconds,
             duration: rule.closeAfterSeconds,
+            dailyLimit: rule.dailyLimitSeconds ?? 0,
+            usedToday: Math.round(urlSecondsToday(paths, url, current)),
             message: rule.message,
         })),
         deadline: session ? session.deadline : 0,
@@ -114,4 +158,6 @@ function browserRulesResponse(config, paths) {
     };
 }
 
-module.exports = { readSession, activeSession, grantBrowserRule, expireBrowser, browserRulesResponse, firefoxTarget };
+module.exports = {
+    readSession, activeSession, grantBrowserRule, expireBrowser, browserRulesResponse, firefoxTarget, urlSecondsToday,
+};

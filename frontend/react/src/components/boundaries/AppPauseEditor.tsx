@@ -3,15 +3,17 @@ import { Alert, Avatar, Box, Button, FormControlLabel, Switch, TextField, Typogr
 import LockClockRoundedIcon from '@mui/icons-material/LockClockRounded';
 import { AppNumberField } from '../input/AppNumberField';
 import type { DesktopTimeouts, TimedApp } from '../../services/desktop';
-import { DEFAULT_PAUSE_MESSAGE, parseWholeNumber } from './boundaryText';
+import { DEFAULT_PAUSE_MESSAGE, describeDailyLimit, parseWholeNumber } from './boundaryText';
 
 const LOCK_POLL_MS = 1000;
 const MAX_DELAY_SECONDS = 86400;
 const MAX_CLOSE_MINUTES = 1440;
+const MAX_DAILY_MINUTES = 1440;
 
 interface AppPauseEditorProps {
     app: TimedApp;
     timeouts: DesktopTimeouts;
+    locked: boolean;
     onSaved: (message: string) => void;
     onError: (message: string) => void;
 }
@@ -36,19 +38,22 @@ function useLockReason(timeouts: DesktopTimeouts, appId: string) {
 }
 
 /** Pause and auto-close settings for one app (and every launcher alias of it). */
-export function AppPauseEditor({ app, timeouts, onSaved, onError }: AppPauseEditorProps) {
+export function AppPauseEditor({ app, timeouts, locked, onSaved, onError }: AppPauseEditorProps) {
     const settings = app.settings;
     const [delay, setDelay] = useState(String(settings?.delaySeconds ?? 30));
     const [autoOpen, setAutoOpen] = useState(settings?.autoOpen ?? true);
     const [message, setMessage] = useState(settings?.message ?? DEFAULT_PAUSE_MESSAGE);
     const [closeAfter, setCloseAfter] = useState(String(Math.round((settings?.closeAfterSeconds ?? 0) / 60)));
+    const [daily, setDaily] = useState(String(Math.round((settings?.dailyLimitSeconds ?? 0) / 60)));
     const [busy, setBusy] = useState(false);
     const lockReason = useLockReason(timeouts, app.id);
 
     const delaySeconds = parseWholeNumber(delay, 0, MAX_DELAY_SECONDS);
     const closeAfterMinutes = parseWholeNumber(closeAfter, 0, MAX_CLOSE_MINUTES);
-    const editable = !lockReason && !busy;
-    const valid = delaySeconds !== null && closeAfterMinutes !== null;
+    const dailyMinutes = parseWholeNumber(daily, 0, MAX_DAILY_MINUTES);
+    const editable = !lockReason && !busy && !locked;
+    const valid = delaySeconds !== null && closeAfterMinutes !== null && dailyMinutes !== null;
+    const usedToday = describeDailyLimit(settings?.dailyLimitSeconds, app.usedTodaySeconds);
 
     const run = async (action: () => Promise<void>, done: string) => {
         setBusy(true);
@@ -63,9 +68,11 @@ export function AppPauseEditor({ app, timeouts, onSaved, onError }: AppPauseEdit
     };
 
     const save = () => {
-        if (delaySeconds === null || closeAfterMinutes === null) return;
+        if (delaySeconds === null || closeAfterMinutes === null || dailyMinutes === null) return;
         void run(
-            () => timeouts.saveApp(app.id, { delaySeconds, autoOpen, message, closeAfterSeconds: closeAfterMinutes * 60 }),
+            () => timeouts.saveApp(app.id, {
+                delaySeconds, autoOpen, message, closeAfterSeconds: closeAfterMinutes * 60, dailyLimitSeconds: dailyMinutes * 60,
+            }),
             `Saved the pause for ${app.name}.`,
         );
     };
@@ -115,7 +122,20 @@ export function AppPauseEditor({ app, timeouts, onSaved, onError }: AppPauseEdit
                     onChange={event => setCloseAfter(event.target.value)}
                     onStepValueChange={value => setCloseAfter(String(value))}
                 />
+                <AppNumberField
+                    label="Daily limit"
+                    size="small"
+                    value={daily}
+                    min={0}
+                    max={MAX_DAILY_MINUTES}
+                    disabled={!editable}
+                    error={dailyMinutes === null}
+                    helperText={dailyMinutes === null ? '0 to 1440 minutes' : 'Minutes a day, then closed until tomorrow; 0 for none'}
+                    onChange={event => setDaily(event.target.value)}
+                    onStepValueChange={value => setDaily(String(value))}
+                />
             </Box>
+            {usedToday && <Typography variant="body2" color="text.secondary">Today: {usedToday}</Typography>}
 
             <TextField
                 label="Countdown message"
@@ -165,6 +185,7 @@ export function AppPauseEditor({ app, timeouts, onSaved, onError }: AppPauseEdit
 
             <Typography variant="caption" color="text.secondary">
                 Applies to the app's launchers and their shortcuts. Apps that are already running, or started from a terminal, skip the pause.
+                The daily limit counts the time the app runs, however it was started, while Claritard is running.
             </Typography>
         </Box>
     );

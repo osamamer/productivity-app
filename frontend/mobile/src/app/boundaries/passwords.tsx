@@ -6,11 +6,12 @@ import { AppButton } from '@/components/ui/AppButton';
 import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
 import { Screen } from '@/components/ui/Screen';
+import { usePasswordWait } from '@/components/boundaries/usePasswordWait';
 import { Boundaries } from '@/services/boundaries';
 
 const MIN_LENGTH = 8;
 
-/** Changing either password first needs the current master password. */
+/** Changing either password first needs the current master password and a ten second wait. */
 export default function BoundaryPasswords() {
   const [master, setMaster] = useState('');
   const [unlocked, setUnlocked] = useState(false);
@@ -18,6 +19,7 @@ export default function BoundaryPasswords() {
   const [newMaster, setNewMaster] = useState('');
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  const wait = usePasswordWait();
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);
@@ -33,7 +35,8 @@ export default function BoundaryPasswords() {
   };
 
   const verify = () => run(async () => {
-    if (await Boundaries?.verifyMasterPassword(master)) setUnlocked(true);
+    if (wait.waiting) return;
+    if (await Boundaries?.verifyMasterPassword(master)) wait.start(() => setUnlocked(true));
     else setMessage({ text: 'Master password incorrect.', error: true });
   });
 
@@ -59,7 +62,12 @@ export default function BoundaryPasswords() {
         <Card style={styles.card}>
           <AppText color="muted">Enter your master password to change either password.</AppText>
           <PasswordField value={master} onChangeText={setMaster} placeholder="Master password" autoFocus onSubmitEditing={() => void verify()} />
-          <AppButton label="Continue" loading={busy} onPress={() => void verify()} />
+          <AppButton
+            label={wait.waiting ? `Wait ${wait.remaining} s` : 'Continue'}
+            loading={busy}
+            disabled={wait.waiting}
+            onPress={() => void verify()}
+          />
         </Card>
       ) : (
         <>

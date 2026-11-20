@@ -9,10 +9,13 @@ const { installedLaunchers } = require('./core/installedApps');
 const { iconDataUrl } = require('./core/icons');
 const { launchOriginal, spawnDetached } = require('./core/launchOriginal');
 const { expireAppSession } = require('./core/appSessions');
-const { activeSession, expireBrowser } = require('./core/browserSession');
+const { activeSession, expireBrowser, readSession, urlSecondsToday } = require('./core/browserSession');
+const { appUsageToday } = require('./core/appDailyLimits');
+const { EditLock } = require('./core/editLock');
 const { installBrowserHost, refreshBrowserHost, isBrowserHostInstalled } = require('./browserHost');
 const { CountdownWindow, ClosingPopups, installCountdownIpc } = require('./windows');
 const { AppSessionMonitor, BrowserSessionMonitor } = require('./sessionMonitors');
+const { DailyLimitMonitor } = require('./dailyLimitMonitor');
 
 const MAX_DELAY_SECONDS = 86400;
 const APPEARANCE_KEYS = ['background', 'paper', 'text', 'textSecondary', 'primary', 'onPrimary'];
@@ -53,11 +56,13 @@ class TimeoutService {
         };
         this.appSessions = new AppSessionMonitor({ ...shared, command });
         this.browserSessions = new BrowserSessionMonitor(shared);
+        this.dailyLimits = new DailyLimitMonitor({ ...shared, loadConfig: () => this.launchers.load() });
+        this.editLock = new EditLock({ file: this.paths.passwordFile });
         installCountdownIpc(sender => [...this.countdowns.values()].find(countdown => countdown.webContents === sender));
     }
 
     get busy() {
-        return this.countdowns.size > 0 || this.appSessions.busy || this.browserSessions.busy;
+        return this.countdowns.size > 0 || this.appSessions.busy || this.browserSessions.busy || this.dailyLimits.busy;
     }
 
     /** Starts enforcement that must run whenever Claritard is running. */
@@ -71,6 +76,7 @@ class TimeoutService {
         }
         void this.appSessions.resume();
         this.browserSessions.start();
+        this.dailyLimits.start();
     }
 
     appearance() {
@@ -84,7 +90,7 @@ class TimeoutService {
 
     async handleCommand(command) {
         try {
-            if (command.type === 'launch') this.launch(command);
+            if (command.type === 'launch') await this.launch(command);
             else if (command.type === 'run') this.run(command);
             else if (command.type === 'expire-app') await expireAppSession(this.paths, command.sessionId);
             else if (command.type === 'expire-browser') await expireBrowser(this.paths, command.sessionId);
@@ -116,11 +122,21 @@ class TimeoutService {
         this.onIdleChange();
     }
 
-    launch({ appId, action, uris }) {
+    async launch({ appId, action, uris }) {
         const entry = this.launchers.load().apps[appId];
         if (!entry) throw new Error('This application no longer has a configured delay. Open its launcher again.');
+        if (appUsageToday(this.paths, entry).leftSeconds <= 0) {
+            await dialog.showMessageBox({
+                type: 'info',
+                title: 'Claritard',
+                message: `${entry.name} is done for today`,
+                detail: `Its daily limit of ${Math.round(entry.dailyLimitSeconds / 60)} minutes is used up. It opens again tomorrow.`,
+            });
+            return;
+        }
         if (this.appSessions.hasTimeLeft(entry)) {
             launchOriginal(entry.backup, { uris, action });
+            if (entry.dailyLimitSeconds) this.dailyLimits.expect();
             return;
         }
         this.openCountdown(`launch:${appId}`, {
@@ -132,6 +148,7 @@ class TimeoutService {
                 try {
                     launchOriginal(entry.backup, { uris, action });
                     void this.appSessions.start(entry);
+                    if (entry.dailyLimitSeconds) this.dailyLimits.expect();
                 } catch (error) {
                     console.error(`Could not open ${entry.name}:`, error);
                     dialog.showErrorBox('Claritard', error.message);
@@ -180,18 +197,27 @@ class TimeoutService {
                 settings: entry && {
                     delaySeconds: entry.delaySeconds,
                     closeAfterSeconds: entry.closeAfterSeconds,
+                    dailyLimitSeconds: entry.dailyLimitSeconds ?? 0,
                     autoOpen: entry.autoOpen,
                     message: entry.message,
                 },
+                usedTodaySeconds: entry?.dailyLimitSeconds ? this.appSecondsToday(entry) : 0,
             };
         });
+        const current = readSession(this.paths);
         const urls = Object.entries(config.urls)
             .sort(([a], [b]) => a.localeCompare(b))
-            .map(([url, rule]) => ({ url, ...rule }));
+            .map(([url, rule]) => ({
+                url,
+                ...rule,
+                dailyLimitSeconds: rule.dailyLimitSeconds ?? 0,
+                usedTodaySeconds: Math.round(urlSecondsToday(this.paths, url, current)),
+            }));
         const session = activeSession(this.paths);
         return {
             apps,
             urls,
+            editLock: this.editLock.status(),
             browser: {
                 hostInstalled: isBrowserHostInstalled(this.paths),
                 extensionDir: this.extensionDir,
@@ -199,6 +225,15 @@ class TimeoutService {
                 unlockedUrls: session ? session.rules : [],
             },
         };
+    }
+
+    appSecondsToday(entry) {
+        try {
+            return Math.round(appUsageToday(this.paths, entry).usedSeconds);
+        } catch (error) {
+            console.error(`Could not read today's time for ${entry.name}:`, error);
+            return 0;
+        }
     }
 
     groupMembers(appId) {
@@ -214,14 +249,17 @@ class TimeoutService {
     }
 
     saveApp(appId, settings) {
+        this.editLock.assertUnlocked();
         this.launchers.configureGroup(this.groupMembers(appId), appSettings(settings));
     }
 
     removeApp(appId) {
+        this.editLock.assertUnlocked();
         this.launchers.configureGroup(this.groupMembers(appId), null);
     }
 
     saveUrl(previousUrl, url, settings) {
+        this.editLock.assertUnlocked();
         const config = this.launchers.load();
         const key = normalizeUrl(url);
         if (previousUrl && previousUrl !== key) delete config.urls[previousUrl];
@@ -231,9 +269,28 @@ class TimeoutService {
     }
 
     removeUrl(url) {
+        this.editLock.assertUnlocked();
         const config = this.launchers.load();
         delete config.urls[url];
         this.launchers.save(config);
+    }
+
+    // ---- The password and wait before any boundary can change ----
+
+    editStatus() {
+        return this.editLock.status();
+    }
+
+    setEditPassword(password) {
+        return this.editLock.setPassword(password);
+    }
+
+    unlockEditing(password) {
+        return this.editLock.unlock(password);
+    }
+
+    lockEditing() {
+        return this.editLock.lock();
     }
 
     installBrowserHost() {

@@ -27,7 +27,7 @@ function matchingRule(address) {
 
 async function native(request) {
   const answer = await browser.runtime.sendNativeMessage(HOST, request);
-  if (answer.error) throw new Error(answer.error);
+  if (answer.error) throw Object.assign(new Error(answer.error), {code: answer.code});
   return answer;
 }
 
@@ -97,6 +97,8 @@ browser.webRequest.onBeforeRequest.addListener(
 
 browser.runtime.onMessage.addListener(async request => {
   if (request.type === "rule") {
+    // Fresh numbers, so a daily limit used up since the last push shows at once.
+    try { applyRules(await native({type: "rules"})); } catch (error) { console.error("Claritard native host:", error); }
     const rule = matchingRule(request.url);
     return rule ? {...rule, appearance, unlocked: (allowed.get(rule.url) || 0) > Date.now()} :
       {error: "This timer was removed in Claritard.", appearance};
@@ -110,7 +112,7 @@ browser.runtime.onMessage.addListener(async request => {
       browser.runtime.sendMessage({type: "unlocked", rule: rule.url}).catch(() => {});
       return {ok: true};
     } catch (error) {
-      return {error: String(error.message || error)};
+      return {error: String(error.message || error), done: error.code === "daily-limit"};
     }
   }
   return {error: "Unknown request"};

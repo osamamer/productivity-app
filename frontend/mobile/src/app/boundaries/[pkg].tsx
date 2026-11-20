@@ -240,13 +240,13 @@ export default function BoundaryRuleEditor() {
         message="This loosens a boundary you set earlier, so it needs the master password."
         placeholder="Master password"
         submitLabel="Save"
+        incorrectMessage="Incorrect master password"
         onCancel={() => setPending(null)}
-        onSubmit={async password => {
-          if (!(await Boundaries?.verifyMasterPassword(password))) return { ok: false, error: 'Incorrect master password' };
+        verify={async password => Boolean(await Boundaries?.verifyMasterPassword(password))}
+        onConfirmed={async () => {
           const rule = pending ? pending.rule : null;
           setPending(null);
           await persist(rule);
-          return { ok: true };
         }}
       />
     </Screen>

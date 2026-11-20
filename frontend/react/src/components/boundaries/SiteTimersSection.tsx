@@ -13,11 +13,13 @@ import { FirefoxSetup } from './FirefoxSetup';
 
 const MAX_DELAY_SECONDS = 86400;
 const MAX_CLOSE_MINUTES = 1440;
+const MAX_DAILY_MINUTES = 1440;
 
 interface SiteTimersSectionProps {
     urls: SiteTimer[];
     browser: TimeoutState['browser'];
     timeouts: DesktopTimeouts;
+    locked: boolean;
     onChanged: (message: string) => void;
     onError: (message: string) => void;
 }
@@ -27,10 +29,11 @@ interface Draft {
     url: string;
     delay: string;
     closeAfter: string;
+    daily: string;
     message: string;
 }
 
-const emptyDraft: Draft = { previousUrl: null, url: '', delay: '30', closeAfter: '5', message: DEFAULT_PAUSE_MESSAGE };
+const emptyDraft: Draft = { previousUrl: null, url: '', delay: '30', closeAfter: '5', daily: '0', message: DEFAULT_PAUSE_MESSAGE };
 
 function draftFor(timer: SiteTimer): Draft {
     return {
@@ -38,21 +41,24 @@ function draftFor(timer: SiteTimer): Draft {
         url: displayUrl(timer.url),
         delay: String(timer.delaySeconds),
         closeAfter: String(Math.round(timer.closeAfterSeconds / 60)),
+        daily: String(Math.round((timer.dailyLimitSeconds ?? 0) / 60)),
         message: timer.message,
     };
 }
 
 /** Firefox domains or URL paths that get a pause, and close Firefox once their time is up. */
-export function SiteTimersSection({ urls, browser, timeouts, onChanged, onError }: SiteTimersSectionProps) {
+export function SiteTimersSection({ urls, browser, timeouts, locked, onChanged, onError }: SiteTimersSectionProps) {
     const [draft, setDraft] = useState<Draft>(emptyDraft);
-    const [busy, setBusy] = useState(false);
+    const [running, setRunning] = useState(false);
+    const busy = running || locked;
     const delaySeconds = parseWholeNumber(draft.delay, 0, MAX_DELAY_SECONDS);
     const closeAfterMinutes = parseWholeNumber(draft.closeAfter, 1, MAX_CLOSE_MINUTES);
-    const valid = draft.url.trim() !== '' && delaySeconds !== null && closeAfterMinutes !== null;
+    const dailyMinutes = parseWholeNumber(draft.daily, 0, MAX_DAILY_MINUTES);
+    const valid = draft.url.trim() !== '' && delaySeconds !== null && closeAfterMinutes !== null && dailyMinutes !== null;
     const update = (patch: Partial<Draft>) => setDraft(current => ({ ...current, ...patch }));
 
     const run = async (action: () => Promise<unknown>, done: string, after?: () => void) => {
-        setBusy(true);
+        setRunning(true);
         try {
             await action();
             after?.();
@@ -60,14 +66,16 @@ export function SiteTimersSection({ urls, browser, timeouts, onChanged, onError 
         } catch (error) {
             onError(error instanceof Error ? error.message : String(error));
         } finally {
-            setBusy(false);
+            setRunning(false);
         }
     };
 
     const save = () => {
-        if (delaySeconds === null || closeAfterMinutes === null) return;
+        if (delaySeconds === null || closeAfterMinutes === null || dailyMinutes === null) return;
         void run(
-            () => timeouts.saveUrl(draft.previousUrl, draft.url, { delaySeconds, closeAfterSeconds: closeAfterMinutes * 60, message: draft.message }),
+            () => timeouts.saveUrl(draft.previousUrl, draft.url, {
+                delaySeconds, closeAfterSeconds: closeAfterMinutes * 60, dailyLimitSeconds: dailyMinutes * 60, message: draft.message,
+            }),
             `Saved the timer for ${draft.url.trim()}. Reload the Claritard URL Gate extension to apply it.`,
             () => setDraft(emptyDraft),
         );
@@ -78,7 +86,7 @@ export function SiteTimersSection({ urls, browser, timeouts, onChanged, onError 
             <BoundarySectionHeader
                 Icon={PublicRoundedIcon}
                 title="Firefox site timers"
-                description="A pause before a site opens in Firefox. Once you open it, Firefox closes when the time is up, even if you close and reopen it in between."
+                description="A pause before a site opens in Firefox. Once you open it, Firefox closes when the time is up, even if you close and reopen it in between. With a daily limit, the site won't open again until tomorrow once the day's time is used."
             />
 
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(260px, 340px) 1fr' }, gap: { xs: 2, md: 3 } }}>
@@ -168,6 +176,18 @@ export function SiteTimersSection({ urls, browser, timeouts, onChanged, onError 
                             helperText="Minutes, 1 to 1440"
                             onChange={event => update({ closeAfter: event.target.value })}
                             onStepValueChange={value => update({ closeAfter: String(value) })}
+                        />
+                        <AppNumberField
+                            label="Daily limit"
+                            size="small"
+                            value={draft.daily}
+                            min={0}
+                            max={MAX_DAILY_MINUTES}
+                            disabled={busy}
+                            error={dailyMinutes === null}
+                            helperText="Minutes a day the site may be open; 0 for none"
+                            onChange={event => update({ daily: event.target.value })}
+                            onStepValueChange={value => update({ daily: String(value) })}
                         />
                     </Box>
                     <TextField

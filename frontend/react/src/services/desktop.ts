@@ -13,6 +13,8 @@ export interface AppPauseSettings {
     delaySeconds: number;
     // 0 leaves the app open.
     closeAfterSeconds: number;
+    // Seconds a day the app may run; once used up it is closed and cannot be opened until tomorrow. 0 = no limit.
+    dailyLimitSeconds: number;
     // Open as soon as the countdown ends, instead of waiting for an Open click.
     autoOpen: boolean;
     message: string;
@@ -25,6 +27,8 @@ export interface TimedApp {
     icon: string | null;
     aliases: string[];
     settings: AppPauseSettings | null;
+    // Seconds the app has run today, counted only while it has a daily limit.
+    usedTodaySeconds?: number;
 }
 
 export interface SiteTimer {
@@ -32,12 +36,25 @@ export interface SiteTimer {
     delaySeconds: number;
     // Firefox closes this long after the first timed site is opened.
     closeAfterSeconds: number;
+    // Seconds a day the site may be open; once used up it cannot be opened until tomorrow. 0 = no limit.
+    dailyLimitSeconds: number;
     message: string;
+    usedTodaySeconds?: number;
+}
+
+// Boundaries change only after the password and a short wait. Times are epoch ms; 0 while locked.
+export interface BoundaryEditStatus {
+    hasPassword: boolean;
+    readyAt: number;
+    unlockedUntil: number;
+    waitMs: number;
 }
 
 export interface TimeoutState {
     apps: TimedApp[];
     urls: SiteTimer[];
+    // Absent in desktop builds that predate the Boundaries password.
+    editLock?: BoundaryEditStatus;
     browser: {
         hostInstalled: boolean;
         extensionDir: string;
@@ -66,8 +83,13 @@ export interface DesktopTimeouts {
     saveApp: (appId: string, settings: AppPauseSettings) => Promise<void>;
     removeApp: (appId: string) => Promise<void>;
     // Returns the normalized URL the timer was saved under.
-    saveUrl: (previousUrl: string | null, url: string, settings: Omit<SiteTimer, 'url'>) => Promise<string>;
+    saveUrl: (previousUrl: string | null, url: string, settings: Omit<SiteTimer, 'url' | 'usedTodaySeconds'>) => Promise<string>;
     removeUrl: (url: string) => Promise<void>;
+    // Absent in desktop builds that predate the Boundaries password. unlockEditing rejects a wrong password.
+    editStatus?: () => Promise<BoundaryEditStatus>;
+    setEditPassword?: (password: string) => Promise<BoundaryEditStatus>;
+    unlockEditing?: (password: string) => Promise<BoundaryEditStatus>;
+    lockEditing?: () => Promise<BoundaryEditStatus>;
     installBrowserHost: () => Promise<void>;
     openExtensionFolder: () => Promise<void>;
     setAppearance: (appearance: TimeoutAppearance) => Promise<void>;

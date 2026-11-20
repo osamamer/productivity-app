@@ -42,15 +42,20 @@ function launchCommand(paths) {
     return JSON.parse(fs.readFileSync(paths.launchCommandFile, 'utf8')).command;
 }
 
+/** Arms a systemd timer that closes Firefox at the session's deadline, even if Claritard quits. */
+function scheduleExpiry(paths, session, unit) {
+    return scheduleCommand({
+        unit,
+        seconds: session.deadline - Date.now() / 1000,
+        command: [...launchCommand(paths), `--timeout-expire-browser=${session.id}`],
+        description: 'Claritard closes Firefox when its URL timer ends',
+    });
+}
+
 /** Hands a new session to Claritard (for its countdown window) and arms the close timer. */
 async function startSessionEnforcement(paths, session) {
     const command = launchCommand(paths);
-    await scheduleCommand({
-        unit: `claritard-browser-expire-${session.id}`,
-        seconds: session.deadline - Date.now() / 1000,
-        command: [...command, `--timeout-expire-browser=${session.id}`],
-        description: 'Claritard closes Firefox when its URL timer ends',
-    });
+    await scheduleExpiry(paths, session, `claritard-browser-expire-${session.id}`);
     await runDetached({
         unit: `claritard-browser-watch-${session.id}`,
         command: [...command, '--timeout-watch'],
@@ -66,8 +71,10 @@ async function handle(request) {
         const url = normalizeUrl(request.url ?? '');
         const rule = config.urls[url];
         if (!rule) throw new Error('This URL is not configured.');
-        const { session, created } = grantBrowserRule(paths, url, rule);
+        const { session, created, shortened } = grantBrowserRule(paths, url, rule);
         if (created) await startSessionEnforcement(paths, session);
+        // A daily limit brought the deadline forward; the first timer would fire too late.
+        if (shortened) await scheduleExpiry(paths, session, `claritard-browser-expire-${session.id}-${Math.round(session.deadline)}`);
         return { ok: true, deadline: session.deadline };
     }
     throw new Error('Unknown browser request.');
@@ -106,7 +113,7 @@ async function main() {
         }
         reply(await handle(request));
     } catch (error) {
-        reply({ error: error instanceof Error ? error.message : String(error) });
+        reply({ error: error instanceof Error ? error.message : String(error), code: error?.code });
     }
 }
 

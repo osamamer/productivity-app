@@ -21,6 +21,20 @@ test('an app list entry says how long the pause is and when the app closes', () 
   assert.equal(describeAppPause({ delaySeconds: 60, closeAfterSeconds: 1800, autoOpen: true, message: '' }), '1 min pause · closes after 30 min');
 });
 
+test('an app with a daily limit says how much of today is left, and leaves out a pause it does not have', () => {
+  const settings = { delaySeconds: 0, closeAfterSeconds: 0, dailyLimitSeconds: 3600, autoOpen: true, message: '' };
+  assert.equal(describeAppPause(settings, 2400), '1 h a day · 20 min left');
+  assert.equal(describeAppPause({ ...settings, delaySeconds: 30 }, 0), '30 s pause · 1 h a day · 1 h left');
+  assert.equal(describeAppPause(settings, 3600), 'Done for today');
+});
+
+test('a site with a daily limit adds it to its summary', () => {
+  assert.equal(
+    describeSiteTimer({ delaySeconds: 30, closeAfterSeconds: 900, dailyLimitSeconds: 1800, usedTodaySeconds: 1795 }),
+    '30 s pause · Firefox closes after 15 min · 30 min a day · 5 s left',
+  );
+});
+
 test('a site timer says Firefox closes, because the whole browser is timed', () => {
   assert.equal(describeSiteTimer({ delaySeconds: 30, closeAfterSeconds: 900 }), '30 s pause · Firefox closes after 15 min');
 });

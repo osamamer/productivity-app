@@ -11,15 +11,31 @@ export function formatDuration(totalSeconds: number): string {
     return minutes ? `${hours} h ${minutes} min` : `${hours} h`;
 }
 
-export function describeAppPause(settings: AppPauseSettings | null): string {
+/** "1 h a day · 20 min left", or "Done for today" once the limit is used up; null without a limit. */
+export function describeDailyLimit(limitSeconds: number | undefined, usedSeconds = 0): string | null {
+    if (!limitSeconds) return null;
+    const left = limitSeconds - usedSeconds;
+    if (left <= 0) return 'Done for today';
+    return `${formatDuration(limitSeconds)} a day · ${formatDuration(Math.ceil(left))} left`;
+}
+
+export function describeAppPause(settings: AppPauseSettings | null, usedTodaySeconds = 0): string {
     if (!settings) return 'No pause';
-    const parts = [`${formatDuration(settings.delaySeconds)} pause`];
+    const parts: string[] = [];
+    const daily = describeDailyLimit(settings.dailyLimitSeconds, usedTodaySeconds);
+    if (settings.delaySeconds || !daily) parts.push(`${formatDuration(settings.delaySeconds)} pause`);
     if (settings.closeAfterSeconds) parts.push(`closes after ${formatDuration(settings.closeAfterSeconds)}`);
+    if (daily) parts.push(daily);
     return parts.join(' · ');
 }
 
-export function describeSiteTimer(timer: Pick<SiteTimer, 'delaySeconds' | 'closeAfterSeconds'>): string {
-    return `${formatDuration(timer.delaySeconds)} pause · Firefox closes after ${formatDuration(timer.closeAfterSeconds)}`;
+type SiteTimerSummary = Pick<SiteTimer, 'delaySeconds' | 'closeAfterSeconds'> & Partial<Pick<SiteTimer, 'dailyLimitSeconds' | 'usedTodaySeconds'>>;
+
+export function describeSiteTimer(timer: SiteTimerSummary): string {
+    const parts = [`${formatDuration(timer.delaySeconds)} pause`, `Firefox closes after ${formatDuration(timer.closeAfterSeconds)}`];
+    const daily = describeDailyLimit(timer.dailyLimitSeconds, timer.usedTodaySeconds);
+    if (daily) parts.push(daily);
+    return parts.join(' · ');
 }
 
 /** The address as the user typed it, without the scheme and trailing slash the shell adds. */

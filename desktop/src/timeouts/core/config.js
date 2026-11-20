@@ -4,6 +4,7 @@ const { normalizeUrl } = require('./urls');
 
 const MAX_DELAY_SECONDS = 86400;
 const MAX_CLOSE_AFTER_SECONDS = 86400;
+const MAX_DAILY_LIMIT_SECONDS = 86400;
 const DEFAULT_MESSAGE = 'Take a breath.';
 
 /**
@@ -51,11 +52,17 @@ function wholeNumberIn(value, min, max, message) {
     return number;
 }
 
+/** Seconds a day an app or site may be used; 0 means no daily limit. */
+function dailyLimit(input) {
+    return wholeNumberIn(input?.dailyLimitSeconds ?? 0, 0, MAX_DAILY_LIMIT_SECONDS, 'The daily limit must be between 0 and 1440 minutes.');
+}
+
 /** Validates what the settings page sends for an app. */
 function appSettings(input) {
     return {
         delaySeconds: wholeNumberIn(input?.delaySeconds, 0, MAX_DELAY_SECONDS, 'Delay must be between 0 and 86400 seconds.'),
         closeAfterSeconds: wholeNumberIn(input?.closeAfterSeconds ?? 0, 0, MAX_CLOSE_AFTER_SECONDS, 'Auto-close must be between 0 and 1440 minutes.'),
+        dailyLimitSeconds: dailyLimit(input),
         autoOpen: input?.autoOpen !== false,
         message: typeof input?.message === 'string' ? input.message.slice(0, 300) : DEFAULT_MESSAGE,
     };
@@ -66,6 +73,7 @@ function urlSettings(input) {
     return {
         delaySeconds: wholeNumberIn(input?.delaySeconds, 0, MAX_DELAY_SECONDS, 'Delay must be between 0 and 86400 seconds.'),
         closeAfterSeconds: wholeNumberIn(input?.closeAfterSeconds, 60, MAX_CLOSE_AFTER_SECONDS, 'Firefox must close between 1 and 1440 minutes after opening.'),
+        dailyLimitSeconds: dailyLimit(input),
         message: typeof input?.message === 'string' && input.message.trim() ? input.message.slice(0, 300) : DEFAULT_MESSAGE,
     };
 }

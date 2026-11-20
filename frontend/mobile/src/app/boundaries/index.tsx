@@ -188,16 +188,13 @@ export default function BoundariesHome() {
         message="They turn back on by themselves in 5 minutes."
         placeholder="Unlock password"
         submitLabel="Pause 5 min"
+        incorrectMessage="Incorrect unlock password"
         onCancel={() => setPrompt(null)}
-        onSubmit={async password => {
-          try {
-            await Boundaries?.pauseWithUnlockPassword(password);
-            setPrompt(null);
-            refresh();
-            return { ok: true };
-          } catch {
-            return { ok: false, error: 'Incorrect unlock password' };
-          }
+        verify={async password => Boolean(await Boundaries?.verifyUnlockPassword(password))}
+        onConfirmed={async password => {
+          await Boundaries?.pauseWithUnlockPassword(password);
+          setPrompt(null);
+          refresh();
         }}
       />
       <PasswordPrompt
@@ -206,16 +203,13 @@ export default function BoundariesHome() {
         message="Turns every boundary off until you switch them back on yourself."
         placeholder="Master password"
         submitLabel="Turn off"
+        incorrectMessage="Incorrect master password"
         onCancel={() => setPrompt(null)}
-        onSubmit={async password => {
-          try {
-            await Boundaries?.disableWithMasterPassword(password);
-            setPrompt(null);
-            refresh();
-            return { ok: true };
-          } catch {
-            return { ok: false, error: 'Incorrect master password' };
-          }
+        verify={async password => Boolean(await Boundaries?.verifyMasterPassword(password))}
+        onConfirmed={async password => {
+          await Boundaries?.disableWithMasterPassword(password);
+          setPrompt(null);
+          refresh();
         }}
       />
     </Screen>

@@ -207,7 +207,9 @@ class BrowserSessionMonitor {
 
     check() {
         const session = readSession(this.paths);
-        if (!session || (this.current && session.id !== this.current.id)) this.stopShowing();
+        // A daily limit can bring the deadline forward; show the new one.
+        const changed = this.current && (session?.id !== this.current.id || session.deadline !== this.current.deadline);
+        if (!session || changed) this.stopShowing();
         if (!session) return;
         const remaining = (session.deadline - Date.now() / 1000);
         if (remaining <= 0) {
@@ -216,8 +218,14 @@ class BrowserSessionMonitor {
         }
         if (!this.current) {
             const totalSeconds = Math.max(1, Math.round(session.deadline - (session.startedAt ?? Date.now() / 1000)));
-            this.current = { id: session.id, warnings: new Warnings({ name: 'Firefox', totalSeconds: Infinity, notify: this.notify }) };
-            this.popups.show(`browser-${session.id}`, {
+            // Keyed by deadline too: a closing popup lingers until its window is gone.
+            this.current = {
+                id: session.id,
+                deadline: session.deadline,
+                key: `browser-${session.id}-${session.deadline}`,
+                warnings: new Warnings({ name: 'Firefox', totalSeconds: Infinity, notify: this.notify }),
+            };
+            this.popups.show(this.current.key, {
                 name: 'Firefox',
                 deadline: session.deadline * 1000,
                 totalSeconds,
@@ -230,7 +238,7 @@ class BrowserSessionMonitor {
 
     stopShowing() {
         if (!this.current) return;
-        this.popups.close(`browser-${this.current.id}`);
+        this.popups.close(this.current.key);
         this.current = null;
         this.onChange();
     }
@@ -250,4 +258,4 @@ class BrowserSessionMonitor {
     }
 }
 
-module.exports = { AppSessionMonitor, BrowserSessionMonitor };
+module.exports = { AppSessionMonitor, BrowserSessionMonitor, Warnings };

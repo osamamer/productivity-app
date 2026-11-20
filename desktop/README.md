@@ -135,6 +135,19 @@ computer, in local and cloud mode alike. It replaces the separate App Timeout to
   and the host pushes new rules whenever `timeouts.json` changes, so changing timers in Claritard
   needs no reload or reinstall.
 
+- **Daily limits.** An app or a timed site can have minutes a day. Once they are used up the app
+  is closed and its launcher shows "done for today" instead of the countdown; a site's gate page
+  says the same and Firefox closes. App time counts while any of the app's processes run, however
+  it was started, checked every five seconds while Claritard runs (`src/timeouts/dailyLimitMonitor.js`).
+  Site time counts from opening the site until its Firefox session ends, so opening a site with
+  little time left today brings that session's end forward. Counts live in
+  `~/.local/share/Claritard/timeouts/daily-usage.json` and reset at local midnight.
+- **Password and wait.** Changing any boundary needs a password, then a ten second wait; the unlock
+  lasts fifteen minutes or until the page is left (`src/timeouts/core/editLock.js`, enforced in
+  the main process). The first visit asks for a password. It is stored hashed in
+  `~/.local/share/Claritard/timeouts/password.json`; deleting that file lets you set a new one.
+  This is friction, not security: `timeouts.json` can still be edited by hand.
+
 **Profiles are separate apps.** A launcher whose command passes `--profile <name>` (for example a
 Nuclear light profile, `nuclear-music-player --profile calm`) is listed, paused and auto-closed on
 its own: its processes are told apart from the default profile's by that argument, so closing one

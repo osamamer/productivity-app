@@ -13,11 +13,12 @@ import { sectionPaperSx } from './boundaryStyles';
 interface AppPausesSectionProps {
     apps: TimedApp[];
     timeouts: DesktopTimeouts;
+    locked: boolean;
     onChanged: (message: string) => void;
     onError: (message: string) => void;
 }
 
-export function AppPausesSection({ apps, timeouts, onChanged, onError }: AppPausesSectionProps) {
+export function AppPausesSection({ apps, timeouts, locked, onChanged, onError }: AppPausesSectionProps) {
     const [query, setQuery] = useState('');
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const selected = apps.find(app => app.id === selectedId) ?? null;
@@ -37,7 +38,7 @@ export function AppPausesSection({ apps, timeouts, onChanged, onError }: AppPaus
             <BoundarySectionHeader
                 Icon={HourglassTopRoundedIcon}
                 title="App pauses"
-                description={`A short, focused countdown before an app opens, and an optional time limit once it's open. ${paused ? `${paused} app${paused === 1 ? '' : 's'} paused.` : ''}`}
+                description={`A short, focused countdown before an app opens, an optional time limit once it's open, and a daily limit after which it won't open until tomorrow. ${paused ? `${paused} app${paused === 1 ? '' : 's'} paused.` : ''}`}
             />
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(260px, 340px) 1fr' }, gap: { xs: 2, md: 3 } }}>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, minWidth: 0 }}>
@@ -67,7 +68,7 @@ export function AppPausesSection({ apps, timeouts, onChanged, onError }: AppPaus
                                 </ListItemAvatar>
                                 <ListItemText
                                     primary={app.name}
-                                    secondary={describeAppPause(app.settings)}
+                                    secondary={describeAppPause(app.settings, app.usedTodaySeconds)}
                                     primaryTypographyProps={{ noWrap: true, fontWeight: app.settings ? 600 : 400 }}
                                     secondaryTypographyProps={{ noWrap: true, color: app.settings ? 'primary.main' : 'text.secondary' }}
                                 />
@@ -80,7 +81,7 @@ export function AppPausesSection({ apps, timeouts, onChanged, onError }: AppPaus
                 </Box>
                 <Box sx={{ minWidth: 0 }}>
                     {selected ? (
-                        <AppPauseEditor key={selected.id} app={selected} timeouts={timeouts} onSaved={onChanged} onError={onError} />
+                        <AppPauseEditor key={selected.id} app={selected} timeouts={timeouts} locked={locked} onSaved={onChanged} onError={onError} />
                     ) : (
                         <Box sx={{ height: '100%', minHeight: 180, display: 'grid', placeItems: 'center', border: 1, borderStyle: 'dashed', borderColor: 'divider', borderRadius: 2, p: 3 }}>
                             <Typography color="text.secondary" textAlign="center">
