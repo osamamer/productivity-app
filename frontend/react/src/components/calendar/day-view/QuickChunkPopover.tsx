@@ -129,7 +129,7 @@ function TaskChoice({ tasks, chunkStart, selected, onSelect }: { tasks: Task[] |
 }
 
 function ChunkForm({ draft, activities, onClose, onCreate }: Omit<QuickChunkPopoverProps, 'draft'> & { draft: ChunkDraft }) {
-    const [kind, setKind] = useState<ChunkKind>(activities.length > 0 ? 'activity' : 'focus');
+    const [kind, setKind] = useState<ChunkKind>('focus');
     const [activityId, setActivityId] = useState<string | null>(activities[0]?.id ?? null);
     const [title, setTitle] = useState(activities[0]?.name ?? '');
     const [task, setTask] = useState<Task | null>(null);
@@ -191,7 +191,7 @@ function ChunkForm({ draft, activities, onClose, onCreate }: Omit<QuickChunkPopo
         <Stack spacing={1.5} component="form" onSubmit={event => { event.preventDefault(); void save(); }}>
             <Typography variant="subtitle1" fontWeight={700}>Plan a chunk</Typography>
             <Stack direction="row" spacing={0.75} role="radiogroup" aria-label="What the time is for">
-                {([['activity', 'Activity'], ['focus', 'Focus on a task']] as const).map(([value, label]) => (
+                {([['focus', 'Focus on a task'], ['activity', 'Activity']] as const).map(([value, label]) => (
                     <Chip
                         key={value}
                         label={label}
