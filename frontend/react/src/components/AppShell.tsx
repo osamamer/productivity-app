@@ -100,8 +100,11 @@ export function AppShell() {
                 {navigationTuckedAway && !totalFocus && (
                     <IconButton
                         aria-label="Show navigation"
-                        title="Show navigation"
-                        onClick={() => setFocusNavigationRevealed(true)}
+                        title={focusNavigationLocked ? 'Pause or finish the focus to open navigation' : 'Show navigation'}
+                        disabled={focusNavigationLocked}
+                        onClick={() => {
+                            if (!focusNavigationLocked) setFocusNavigationRevealed(true);
+                        }}
                         sx={{
                             position: 'fixed',
                             top: '50%',

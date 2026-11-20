@@ -30,30 +30,51 @@ function EditableName({ title, onRename }: { title: string; onRename?: (name: st
         if (name && name !== title) onRename?.(name);
         setDraft(null);
     };
-    if (draft !== null) {
-        return (
-            <InputBase
-                autoFocus
-                fullWidth
-                value={draft}
-                onChange={event => setDraft(event.target.value)}
-                onBlur={finish}
-                onKeyDown={event => {
-                    if (event.key === 'Enter') finish();
-                    if (event.key === 'Escape') setDraft(null);
-                }}
-                inputProps={{ 'aria-label': `Rename ${title}`, maxLength: 60 }}
-                sx={{ fontSize: '1.05rem', lineHeight: 1.5, p: 0, '& input': { p: 0 } }}
-            />
-        );
-    }
+    // The name and the input share one grid cell, and both use the same font metrics, so the line
+    // keeps its exact place when it turns into a field.
     return (
-        <Typography
-            onClick={onRename ? () => setDraft(title) : undefined}
-            sx={{ fontSize: '1.05rem', lineHeight: 1.5, overflowWrap: 'anywhere', cursor: onRename ? 'text' : 'default', width: 'fit-content' }}
-        >
-            {title}
-        </Typography>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', alignItems: 'start' }}>
+            <Typography
+                onClick={onRename ? () => setDraft(title) : undefined}
+                sx={{
+                    gridArea: '1 / 1',
+                    justifySelf: 'start',
+                    fontSize: '1.05rem',
+                    lineHeight: 1.5,
+                    overflowWrap: 'anywhere',
+                    cursor: onRename ? 'text' : 'default',
+                    visibility: draft !== null ? 'hidden' : 'visible',
+                }}
+            >
+                {title}
+            </Typography>
+            {draft !== null && (
+                <InputBase
+                    autoFocus
+                    value={draft}
+                    onChange={event => setDraft(event.target.value)}
+                    onBlur={finish}
+                    onKeyDown={event => {
+                        if (event.key === 'Enter') finish();
+                        if (event.key === 'Escape') setDraft(null);
+                    }}
+                    inputProps={{ 'aria-label': `Rename ${title}`, maxLength: 60 }}
+                    sx={{
+                        gridArea: '1 / 1',
+                        fontSize: '1.05rem',
+                        lineHeight: 1.5,
+                        '& input': {
+                            p: 0,
+                            height: '1.5em',
+                            font: 'inherit',
+                            lineHeight: 'inherit',
+                            letterSpacing: 'inherit',
+                            color: 'inherit',
+                        },
+                    }}
+                />
+            )}
+        </Box>
     );
 }
 

@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { Box } from '@mui/material';
 
-const EXPAND_MS = 320;
+export const EXPAND_MS = 320;
 
 /**
  * Opens and closes by animating the height of the grid row, so the content keeps its layout and

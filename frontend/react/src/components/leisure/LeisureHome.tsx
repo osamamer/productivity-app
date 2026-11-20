@@ -21,6 +21,7 @@ import { LeisureTimerPanel } from './LeisureTimerPanel';
 import { TimedTodayList } from './TimedTodayList';
 import { timerClock } from './timerClock';
 import { timeByActivity } from './leisureTime';
+import { EXPAND_MS, ExpandCollapse } from '../ExpandCollapse';
 
 const MINUTE = 60_000;
 
@@ -65,6 +66,8 @@ export function LeisureHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
     const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
+    // Activities being deleted: their rows close first, then the activity is removed.
+    const [leaving, setLeaving] = useState<ReadonlySet<string>>(() => new Set());
 
     const sessions = useMemo(() => {
         const listed = overview?.activitySessions ?? [];
@@ -102,31 +105,45 @@ export function LeisureHome({ modeSwitch }: { modeSwitch: ReactNode }) {
         timeByActivity(sessions, now).map(total => [total.activityId, total.ms] as const),
     ), [sessions, now]);
 
+    const removeActivity = (activity: Activity) => {
+        setLeaving(previous => new Set(previous).add(activity.id));
+        window.setTimeout(() => {
+            void activityStore.remove(activity.id)
+                .catch(report('Could not delete the activity.'))
+                .finally(() => setLeaving(previous => {
+                    const next = new Set(previous);
+                    next.delete(activity.id);
+                    return next;
+                }));
+        }, EXPAND_MS);
+    };
+
     const renderActivity = (activity: Activity) => {
         const running = session?.activityId === activity.id ? session : null;
         const panel = openPanel?.activityId === activity.id ? openPanel.panel : null;
         const todayMs = todayByActivity.get(activity.id) ?? 0;
         return (
-            <LeisureRow
-                key={activity.id}
-                title={activity.name}
-                subtitle={todayMs > 0 ? `${formatScreenDuration(todayMs)} today` : null}
-                active={Boolean(running)}
-                panel={panel}
-                onTogglePanel={next => togglePanel(activity.id, next)}
-                timerDisabled={Boolean(session) && !running}
-                onRename={name => void update(activity, { name })}
-                onDelete={() => void activityStore.remove(activity.id).catch(report('Could not delete the activity.'))}
-            >
-                {panel === 'details' && (
-                    <Box sx={{ mb: running ? 2 : 0 }}>
-                        <ActivityDetailsPanel color={activity.color} onChange={color => void update(activity, { color })} />
-                    </Box>
-                )}
-                {running
-                    ? timerPanel(running)
-                    : panel === 'timer' && <LeisureStartPanel defaultMinutes={0} onStart={start(activity)} />}
-            </LeisureRow>
+            <ExpandCollapse key={activity.id} open={!leaving.has(activity.id)}>
+                <LeisureRow
+                    title={activity.name}
+                    subtitle={todayMs > 0 ? `${formatScreenDuration(todayMs)} today` : null}
+                    active={Boolean(running)}
+                    panel={panel}
+                    onTogglePanel={next => togglePanel(activity.id, next)}
+                    timerDisabled={Boolean(session) && !running}
+                    onRename={name => void update(activity, { name })}
+                    onDelete={() => removeActivity(activity)}
+                >
+                    {panel === 'details' && (
+                        <Box sx={{ mb: running ? 2 : 0 }}>
+                            <ActivityDetailsPanel color={activity.color} onChange={color => void update(activity, { color })} />
+                        </Box>
+                    )}
+                    {running
+                        ? timerPanel(running)
+                        : panel === 'timer' && <LeisureStartPanel defaultMinutes={0} onStart={start(activity)} />}
+                </LeisureRow>
+            </ExpandCollapse>
         );
     };
 
