@@ -7,6 +7,7 @@ import { taskService } from '../../../services/api/taskService';
 import { Activity } from '../../../types/Activity';
 import { CalendarEventInput } from '../../../types/CalendarEvent';
 import { Task } from '../../../types/Task';
+import { priorityBand, rankFocusTaskChoices, scheduleLabel } from './focusTaskChoices';
 
 export interface ChunkDraft {
     start: number;
@@ -22,7 +23,8 @@ interface QuickChunkPopoverProps {
 }
 
 type ChunkKind = 'activity' | 'focus';
-const MAX_TASK_CHOICES = 6;
+const MAX_TASK_CHOICES = 50;
+const PRIORITY_TINT = { high: '#ef4444', medium: '#eab308' } as const;
 
 function withTime(base: number, time: string): number {
     const [hours, minutes] = time.split(':').map(Number);
@@ -62,17 +64,44 @@ function useOpenTasks(enabled: boolean): Task[] | null {
     return tasks;
 }
 
-function TaskChoice({ tasks, selected, onSelect }: { tasks: Task[] | null; selected: Task | null; onSelect: (task: Task | null) => void }) {
+function TaskChoiceRow({ task, onSelect }: { task: Task; onSelect: (task: Task) => void }) {
+    const band = priorityBand(task.importance);
+    const tint = band === 'low' ? null : PRIORITY_TINT[band];
+    return (
+        <ButtonBase
+            onClick={() => onSelect(task)}
+            title={`${band[0].toUpperCase()}${band.slice(1)} priority`}
+            sx={theme => ({
+                flexShrink: 0,
+                justifyContent: 'space-between',
+                gap: 1,
+                textAlign: 'left',
+                px: 1,
+                py: 0.5,
+                borderRadius: 1,
+                backgroundColor: tint ? alpha(tint, 0.1) : 'transparent',
+                '&:hover': { backgroundColor: tint ? alpha(tint, 0.18) : alpha(theme.palette.primary.main, 0.08) },
+            })}
+        >
+            <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>{task.name}</Typography>
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ flexShrink: 0 }}>
+                {scheduleLabel(task, new Date())}
+            </Typography>
+        </ButtonBase>
+    );
+}
+
+function TaskChoice({ tasks, chunkStart, selected, onSelect }: { tasks: Task[] | null; chunkStart: number; selected: Task | null; onSelect: (task: Task | null) => void }) {
     const [query, setQuery] = useState('');
-    const matches = useMemo(() => {
-        const needle = query.trim().toLowerCase();
-        return (tasks ?? []).filter(task => !needle || task.name.toLowerCase().includes(needle)).slice(0, MAX_TASK_CHOICES);
-    }, [query, tasks]);
+    const matches = useMemo(
+        () => rankFocusTaskChoices(tasks ?? [], query, new Date(chunkStart)).slice(0, MAX_TASK_CHOICES),
+        [query, tasks, chunkStart],
+    );
 
     if (selected) {
         return (
             <Stack direction="row" alignItems="center" spacing={1}>
-                <Chip label={selected.name} onDelete={() => onSelect(null)} sx={{ maxWidth: '100%' }} />
+                <Chip label={`${selected.name} · ${scheduleLabel(selected, new Date())}`} onDelete={() => onSelect(null)} sx={{ maxWidth: '100%' }} />
             </Stack>
         );
     }
@@ -88,23 +117,8 @@ function TaskChoice({ tasks, selected, onSelect }: { tasks: Task[] | null; selec
                 placeholder={tasks === null ? 'Loading tasks…' : 'Search your tasks'}
             />
             {tasks !== null && (
-                <Stack spacing={0.25}>
-                    {matches.map(task => (
-                        <ButtonBase
-                            key={task.taskId}
-                            onClick={() => onSelect(task)}
-                            sx={theme => ({
-                                justifyContent: 'flex-start',
-                                textAlign: 'left',
-                                px: 1,
-                                py: 0.5,
-                                borderRadius: 1,
-                                '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.08) },
-                            })}
-                        >
-                            <Typography variant="body2" noWrap>{task.name}</Typography>
-                        </ButtonBase>
-                    ))}
+                <Stack spacing={0.25} sx={{ maxHeight: 216, overflowY: 'auto', overscrollBehavior: 'contain' }}>
+                    {matches.map(task => <TaskChoiceRow key={task.taskId} task={task} onSelect={onSelect} />)}
                     {matches.length === 0 && (
                         <Typography variant="caption" color="text.secondary">No open task matches.</Typography>
                     )}
@@ -197,7 +211,7 @@ function ChunkForm({ draft, activities, onClose, onCreate }: Omit<QuickChunkPopo
                 </>
             ) : (
                 <Box>
-                    <TaskChoice tasks={tasks} selected={task} onSelect={setTask} />
+                    <TaskChoice tasks={tasks} chunkStart={withTime(draft.start, start)} selected={task} onSelect={setTask} />
                 </Box>
             )}
             <Stack direction="row" spacing={1}>
