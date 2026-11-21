@@ -80,6 +80,12 @@ function setString(entry, groupName, key, value) {
     group.lines.splice(index, 0, { key, value: escaped });
 }
 
+/** Drops every line of `groupName` whose key passes `predicate`. */
+function removeKeys(entry, groupName, predicate) {
+    const group = findGroup(entry, groupName);
+    if (group) group.lines = group.lines.filter(line => !('key' in line) || !predicate(line.key));
+}
+
 function setBoolean(entry, groupName, key, value) {
     setString(entry, groupName, key, value ? 'true' : 'false');
 }
@@ -174,6 +180,7 @@ module.exports = {
     getBoolean,
     setString,
     setBoolean,
+    removeKeys,
     splitExec,
     quoteExecArgument,
     expandExec,

@@ -12,12 +12,15 @@ const { expireAppSession } = require('./core/appSessions');
 const { activeSession, expireBrowser, readSession, urlSecondsToday } = require('./core/browserSession');
 const { appUsageToday } = require('./core/appDailyLimits');
 const { EditLock } = require('./core/editLock');
+const { watchDir } = require('./core/fileWatch');
 const { installBrowserHost, refreshBrowserHost, isBrowserHostInstalled } = require('./browserHost');
 const { CountdownWindow, ClosingPopups, installCountdownIpc } = require('./windows');
 const { AppSessionMonitor, BrowserSessionMonitor } = require('./sessionMonitors');
 const { DailyLimitMonitor } = require('./dailyLimitMonitor');
 
 const MAX_DELAY_SECONDS = 86400;
+/** Backstop for launcher changes the folder watch misses (e.g. a package update in /usr/share). */
+const LAUNCHER_REPAIR_MS = 60_000;
 const APPEARANCE_KEYS = ['background', 'paper', 'text', 'textSecondary', 'primary', 'onPrimary'];
 const COLOR = /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\))$/i;
 
@@ -68,15 +71,42 @@ class TimeoutService {
     /** Starts enforcement that must run whenever Claritard is running. */
     start() {
         fs.mkdirSync(this.paths.stateDir, { recursive: true });
+        this.repairLaunchers();
         try {
-            this.launchers.repair();
             refreshBrowserHost(this.paths, this.command);
         } catch (error) {
-            console.error('Could not refresh the app timeout launchers:', error);
+            console.error('Could not refresh the Firefox native host:', error);
         }
+        this.watchLaunchers();
         void this.appSessions.resume();
         this.browserSessions.start();
         this.dailyLimits.start();
+    }
+
+    repairLaunchers() {
+        try {
+            this.launchers.repair();
+        } catch (error) {
+            console.error('Could not repair the app timeout launchers:', error);
+        }
+    }
+
+    /**
+     * Apps can replace their own launcher at any time (Claude Desktop rewrites it after an
+     * update), so wrapped launchers are re-checked whenever the folder changes and every minute.
+     */
+    watchLaunchers() {
+        if (this.launcherTimer) return;
+        try {
+            watchDir(this.paths.applicationsDir, () => this.repairLaunchers(), {
+                filter: name => name.endsWith('.desktop'),
+                debounceMs: 1000,
+            });
+        } catch (error) {
+            console.error('Could not watch the applications folder:', error);
+        }
+        this.launcherTimer = setInterval(() => this.repairLaunchers(), LAUNCHER_REPAIR_MS);
+        this.launcherTimer.unref?.();
     }
 
     appearance() {

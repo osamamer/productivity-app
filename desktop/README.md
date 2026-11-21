@@ -159,8 +159,16 @@ Countdown windows and the gate page use the colors of the web app's current them
 
 Limitations, as with App Timeout: apps that are already running, started from a terminal, or
 opened by another app through D-Bus skip the pause; launchers that run a shell script cannot be
-tracked; Wayland compositors decide where the "closes in" window appears; and moving the AppImage
-breaks the rewritten launchers until Claritard next starts (it re-points them then).
+tracked; and Wayland compositors decide where the "closes in" window appears.
+
+**Launchers heal themselves.** While Claritard runs it re-checks the wrapped launchers at start,
+whenever `~/.local/share/applications` changes, and every minute (`Launchers.repair`). A launcher
+the app rewrote (Claude Desktop regenerates its own after every update), deleted while the app is
+still installed, or left pointing at an old Claritard location is wrapped again; a package update
+to the system launcher refreshes the backup. Wrapped launchers drop `X-*-Generated` keys, the tag
+apps use to recognise launchers they own, so such apps leave the wrapper alone. Turning a pause
+off in Boundaries is the only way to remove a wrapper; another timeout tool's wrapper is left as
+it is.
 
 ## Screen time
 

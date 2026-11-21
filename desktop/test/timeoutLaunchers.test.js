@@ -27,7 +27,7 @@ function fakeSystem() {
     fs.writeFileSync(path.join(systemApps, 'focus-thief-alias.desktop'), launcher.replace('Focus Thief', 'Focus Thief Alias'));
     const env = { HOME: home, XDG_DATA_DIRS: path.join(root, 'usr', 'share'), PATH: '' };
     const paths = timeoutPaths(env);
-    return { root, env, paths, launchers: new Launchers({ paths, selfCommand: SELF }), systemApps, binary };
+    return { root, env, paths, launchers: new Launchers({ paths, selfCommand: SELF, env }), systemApps, binary };
 }
 
 const settings = appSettings({ delaySeconds: 30, closeAfterSeconds: 600, autoOpen: false, message: 'Is this what you meant to do?' });
@@ -90,6 +90,85 @@ test('moving Claritard re-points its launchers on the next start', () => {
     launchers.configureGroup([{ id: 'focus-thief.desktop', file: path.join(systemApps, 'focus-thief.desktop') }], settings);
     new Launchers({ paths, selfCommand: ['/home/me/Claritard-2.AppImage'] }).repair();
     assert.match(fs.readFileSync(path.join(paths.applicationsDir, 'focus-thief.desktop'), 'utf8'), /Claritard-2\.AppImage/);
+});
+
+/** A user launcher the app wrote and tagged as its own, the way Claude Desktop does. */
+function appGeneratedLauncher(binary, extraAction = '') {
+    return `[Desktop Entry]\nType=Application\nName=Focus Thief\nExec=${binary} %U\nActions=NewChat;${extraAction}\n`
+        + `X-Focus-Generated=true\n\n[Desktop Action NewChat]\nName=New Chat\nExec=${binary} "focus://new"\n`;
+}
+
+function enableWithAppLauncher({ paths, launchers, binary }) {
+    fs.mkdirSync(paths.applicationsDir, { recursive: true });
+    const local = path.join(paths.applicationsDir, 'focus-thief.desktop');
+    fs.writeFileSync(local, appGeneratedLauncher(binary));
+    launchers.configureGroup([{ id: 'focus-thief.desktop', file: local }], settings);
+    return local;
+}
+
+test('a wrapped launcher drops the app\'s ownership tag so the app leaves it alone', () => {
+    const system = fakeSystem();
+    const local = enableWithAppLauncher(system);
+    const wrapped = fs.readFileSync(local, 'utf8');
+    assert.doesNotMatch(wrapped, /X-Focus-Generated/);
+    assert.match(wrapped, /X-Claritard-Timeout=true/);
+    assert.match(wrapped, /"--timeout-action=NewChat"/);
+    // Turning the delay off still restores the app's own launcher exactly, tag included.
+    system.launchers.configureGroup([{ id: 'focus-thief.desktop', file: local }], null);
+    assert.equal(fs.readFileSync(local, 'utf8'), appGeneratedLauncher(system.binary));
+});
+
+test('a launcher the app regenerated after an update is wrapped again and becomes the backup', () => {
+    const system = fakeSystem();
+    const local = enableWithAppLauncher(system);
+    const updated = appGeneratedLauncher(system.binary, 'Continue;');
+    fs.writeFileSync(local, updated);
+
+    assert.equal(system.launchers.repair(), true);
+    const wrapped = fs.readFileSync(local, 'utf8');
+    assert.match(wrapped, /"--timeout-launch=focus-thief.desktop"/);
+    assert.match(wrapped, /Actions=NewChat;Continue;/);
+    assert.equal(fs.readFileSync(system.launchers.load().apps['focus-thief.desktop'].backup, 'utf8'), updated);
+    assert.equal(system.launchers.repair(), false, 'a second repair finds nothing to do');
+});
+
+test('a deleted launcher is recreated while the app is installed, but not after it is removed', () => {
+    const system = fakeSystem();
+    const members = [{ id: 'focus-thief.desktop', file: path.join(system.systemApps, 'focus-thief.desktop') }];
+    system.launchers.configureGroup(members, settings);
+    const local = path.join(system.paths.applicationsDir, 'focus-thief.desktop');
+
+    fs.rmSync(local);
+    system.launchers.repair();
+    assert.match(fs.readFileSync(local, 'utf8'), /"--timeout-launch=focus-thief.desktop"/);
+
+    fs.rmSync(local);
+    fs.rmSync(path.join(system.systemApps, 'focus-thief.desktop'));
+    fs.rmSync(system.binary);
+    assert.equal(system.launchers.repair(), false);
+    assert.equal(fs.existsSync(local), false);
+});
+
+test('the backup follows a package update of the system launcher', () => {
+    const system = fakeSystem();
+    const systemFile = path.join(system.systemApps, 'focus-thief.desktop');
+    system.launchers.configureGroup([{ id: 'focus-thief.desktop', file: systemFile }], settings);
+    const updated = fs.readFileSync(systemFile, 'utf8').replace('Name=Focus Thief', 'Name=Focus Thief 2');
+    fs.writeFileSync(systemFile, updated);
+
+    system.launchers.repair();
+    assert.match(fs.readFileSync(path.join(system.paths.applicationsDir, 'focus-thief.desktop'), 'utf8'), /Name=Focus Thief 2/);
+    assert.equal(fs.readFileSync(system.launchers.load().apps['focus-thief.desktop'].backup, 'utf8'), updated);
+});
+
+test('another timeout tool\'s wrapper is never replaced by repair', () => {
+    const system = fakeSystem();
+    system.launchers.configureGroup([{ id: 'focus-thief.desktop', file: path.join(system.systemApps, 'focus-thief.desktop') }], settings);
+    const local = path.join(system.paths.applicationsDir, 'focus-thief.desktop');
+    const foreign = '[Desktop Entry]\nType=Application\nName=Focus Thief\nExec=app-timeout launch focus-thief\n';
+    fs.writeFileSync(local, foreign);
+    assert.equal(system.launchers.repair(), false);
+    assert.equal(fs.readFileSync(local, 'utf8'), foreign);
 });
 
 test('settings outside the allowed ranges are refused', () => {
