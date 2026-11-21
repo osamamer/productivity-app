@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.osama.task.Task;
 import org.osama.task.TaskDeletionReceipt;
 import org.osama.task.TaskRepository;
+import org.osama.task.TaskService;
 import org.osama.task.TaskSkipReason;
 import org.osama.task.recurrence.TaskSeriesRepository;
 import org.osama.task.recurrence.events.TaskSeriesOccurrencesChangedEvent;
@@ -11,6 +12,7 @@ import org.osama.user.User;
 import org.osama.user.UserRepository;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -38,6 +40,7 @@ public class StatTaskLinkService {
     private final StatEntryRepository entryRepository;
     private final StatFocusTaskLinkRepository focusTaskLinkRepository;
     private final TaskRepository taskRepository;
+    private final TaskService taskService;
     private final TaskSeriesRepository taskSeriesRepository;
     private final UserRepository userRepository;
 
@@ -45,12 +48,14 @@ public class StatTaskLinkService {
                                StatEntryRepository entryRepository,
                                StatFocusTaskLinkRepository focusTaskLinkRepository,
                                TaskRepository taskRepository,
+                               @Lazy TaskService taskService,
                                TaskSeriesRepository taskSeriesRepository,
                                UserRepository userRepository) {
         this.definitionRepository = definitionRepository;
         this.entryRepository = entryRepository;
         this.focusTaskLinkRepository = focusTaskLinkRepository;
         this.taskRepository = taskRepository;
+        this.taskService = taskService;
         this.taskSeriesRepository = taskSeriesRepository;
         this.userRepository = userRepository;
     }
@@ -61,12 +66,16 @@ public class StatTaskLinkService {
         if (!isBoolean(definition)) return;
 
         Map<String, Task> tasksById = new LinkedHashMap<>();
+        taskRepository.findAllByLinkedStatDefinitionIdAndUserId(definition.getId(), userId)
+                .stream()
+                .filter(task -> date.equals(taskDate(task)))
+                .forEach(task -> tasksById.put(task.getTaskId(), task));
         if (definition.getRecurringTaskSeriesId() != null) {
             taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(
                             definition.getRecurringTaskSeriesId())
                     .stream()
                     .filter(task -> date.equals(taskDate(task)))
-                    .forEach(task -> tasksById.put(task.getTaskId(), task));
+                    .forEach(task -> tasksById.putIfAbsent(task.getTaskId(), task));
         } else {
             List<String> taskNames = linkedTaskNames(definition);
             if (!taskNames.isEmpty()) {
@@ -81,7 +90,7 @@ public class StatTaskLinkService {
                 .stream()
                 .filter(task -> date.equals(taskDate(task)))
                 .forEach(task -> tasksById.putIfAbsent(task.getTaskId(), task));
-        tasksById.values().forEach(task -> setTaskState(task, value, status));
+        tasksById.values().forEach(task -> synchronizeTaskState(definition, task, value, status, userId));
 
         log.info("Linked stat occurrence synchronized to task: userId={} statDefinitionId={} date={} value={} status={}",
                 userId, definition.getId(), date, value, status);
@@ -348,11 +357,11 @@ public class StatTaskLinkService {
                 .stream()
                 // A skipped row may be an occurrence retired by the old rule;
                 // applying an entry to it would resurrect it during a series edit.
-                .filter(task -> !task.isSkipped())
+                .filter(task -> !task.isSkipped() || task.getSkipReason() == TaskSkipReason.USER)
                 .filter(task -> entriesByDate.containsKey(taskDate(task)))
                 .forEach(task -> {
                     StatEntry entry = entriesByDate.get(taskDate(task));
-                    setTaskState(task, entry.getValue(), entry.getStatus());
+                    synchronizeTaskState(definition, task, entry.getValue(), entry.getStatus(), userId);
                 });
     }
 
@@ -480,6 +489,23 @@ public class StatTaskLinkService {
         task.setSkipReason(notPlanned ? TaskSkipReason.USER : null);
         task.setCompletionDateTime(completed ? LocalDateTime.now() : null);
         taskRepository.save(task);
+    }
+
+    private void synchronizeTaskState(StatDefinition definition, Task task, Double value,
+                                      StatEntryStatus status, String userId) {
+        boolean no = status == StatEntryStatus.NOT_PLANNED || value != null && value == 0.0;
+        boolean concreteStatTask = definition.getId().equals(task.getLinkedStatDefinitionId())
+                || definition.getRecurringTaskSeriesId() != null
+                && definition.getRecurringTaskSeriesId().equals(task.getTaskSeriesId());
+        if (no && concreteStatTask) {
+            if (task.getTaskSeriesId() == null) {
+                taskService.deleteTask(task.getTaskId(), userId, false);
+            } else {
+                taskService.deleteTaskOccurrence(task.getTaskId(), userId, false);
+            }
+            return;
+        }
+        setTaskState(task, value, status);
     }
 
     private record PendingStatEntryDeletion(StatDefinition definition, LocalDate date, StatEntry entry) {}

@@ -10,7 +10,6 @@ import org.osama.requests.UpdateTaskRequest;
 import org.osama.task.Task;
 import org.osama.task.TaskDeletionReceipt;
 import org.osama.task.TaskRepository;
-import org.osama.task.TaskSkipReason;
 import org.osama.task.TaskService;
 import org.osama.task.recurrence.TaskRecurrenceFrequency;
 import org.osama.task.recurrence.TaskSeries;
@@ -1002,9 +1001,6 @@ public class StatServiceTest {
         statService.recordEntry(definition.getId(), today, 1.0, TEST_USER_ID);
         assertTrue(taskRepository.findTaskByTaskId(todayTask.getTaskId()).orElseThrow().isCompleted());
 
-        statService.recordEntry(definition.getId(), today, 0.0, TEST_USER_ID);
-        assertFalse(taskRepository.findTaskByTaskId(todayTask.getTaskId()).orElseThrow().isCompleted());
-
         statService.recordEntry(definition.getId(), today, null, TEST_USER_ID);
         assertFalse(taskRepository.findTaskByTaskId(todayTask.getTaskId()).orElseThrow().isCompleted());
         assertTrue(entryRepository.findByStatDefinitionIdAndUserIdAndDate(
@@ -1024,15 +1020,34 @@ public class StatServiceTest {
 
         statService.recordEntry(definition.getId(), today, null,
                 StatEntryStatus.NOT_PLANNED, TEST_USER_ID);
-        Task notPlannedTask = taskRepository.findTaskByTaskId(todayTask.getTaskId()).orElseThrow();
-        assertFalse(notPlannedTask.isCompleted());
-        assertTrue(notPlannedTask.isSkipped());
-        assertEquals(TaskSkipReason.USER, notPlannedTask.getSkipReason());
+        assertTrue(taskRepository.findTaskByTaskId(todayTask.getTaskId()).isEmpty());
+        assertEquals(StatEntryStatus.NOT_PLANNED, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                definition.getId(), TEST_USER_ID, today).orElseThrow().getStatus());
 
-        statService.recordEntry(definition.getId(), today, 1.0, TEST_USER_ID);
-        Task restoredTask = taskRepository.findTaskByTaskId(todayTask.getTaskId()).orElseThrow();
-        assertTrue(restoredTask.isCompleted());
-        assertFalse(restoredTask.isSkipped());
+        Task tomorrowTask = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(
+                        linkedDefinition.getRecurringTaskSeriesId()).stream()
+                .filter(task -> today.plusDays(1).equals(task.getSeriesOccurrenceAt().toLocalDate()))
+                .findFirst().orElseThrow();
+        statService.recordEntry(definition.getId(), today.plusDays(1), 0.0, TEST_USER_ID);
+        assertTrue(taskRepository.findTaskByTaskId(tomorrowTask.getTaskId()).isEmpty());
+        assertEquals(0.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                definition.getId(), TEST_USER_ID, today.plusDays(1)).orElseThrow().getValue());
+    }
+
+    @Test
+    void noRecordedBeforeCreatingARecurringTaskDoesNotMaterializeThatDay() {
+        StatDefinition definition = createNamedStatDefinition("Already declined", StatType.BOOLEAN);
+        LocalDate today = LocalDate.now();
+        statService.recordEntry(definition.getId(), today, 0.0, TEST_USER_ID);
+
+        StatDefinition linked = statService.createRecurringTask(definition.getId(), TEST_USER_ID);
+
+        assertTrue(taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(
+                        linked.getRecurringTaskSeriesId()).stream()
+                .noneMatch(task -> today.equals(task.getSeriesOccurrenceAt().toLocalDate())));
+        assertTrue(taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(
+                        linked.getRecurringTaskSeriesId()).stream()
+                .anyMatch(task -> today.plusDays(1).equals(task.getSeriesOccurrenceAt().toLocalDate())));
     }
 
     @Test
@@ -1046,9 +1061,6 @@ public class StatServiceTest {
 
         statService.recordEntry(definition.getId(), taskDate, 1.0, TEST_USER_ID);
         assertTrue(taskRepository.findTaskByTaskId(task.getTaskId()).orElseThrow().isCompleted());
-
-        statService.recordEntry(definition.getId(), taskDate, 0.0, TEST_USER_ID);
-        assertFalse(taskRepository.findTaskByTaskId(task.getTaskId()).orElseThrow().isCompleted());
 
         statService.recordEntry(definition.getId(), taskDate, null, TEST_USER_ID);
         assertTrue(entryRepository.findByStatDefinitionIdAndUserIdAndDate(
@@ -1070,6 +1082,7 @@ public class StatServiceTest {
 
         LocalDate movedDate = taskDate.plusDays(2);
         UpdateTaskRequest moveTask = new UpdateTaskRequest();
+        moveTask.setName("Renamed one-time habit");
         moveTask.setScheduledPerformDateTime(movedDate.atTime(11, 0).toString());
         Task movedTask = taskService.updateTask(task.getTaskId(), moveTask, TEST_USER_ID).orElseThrow();
         assertTrue(movedTask.isStatLinked());
@@ -1080,6 +1093,9 @@ public class StatServiceTest {
 
         statService.recordEntry(definition.getId(), movedDate, 1.0, TEST_USER_ID);
         assertTrue(taskRepository.findTaskByTaskId(task.getTaskId()).orElseThrow().isCompleted());
+
+        statService.recordEntry(definition.getId(), movedDate, 0.0, TEST_USER_ID);
+        assertTrue(taskRepository.findTaskByTaskId(task.getTaskId()).isEmpty());
 
         Task unrelatedTask = createTask("Unrelated task");
         Task ordinaryUpdatedTask = taskService.updateTask(
@@ -1113,7 +1129,7 @@ public class StatServiceTest {
 
         statService.recordEntry(definition.getId(), movedDate, 0.0, TEST_USER_ID);
 
-        assertFalse(taskRepository.findTaskByTaskId(occurrence.getTaskId()).orElseThrow().isCompleted());
+        assertTrue(taskRepository.findTaskByTaskId(occurrence.getTaskId()).isEmpty());
     }
 
     @Test
@@ -1174,13 +1190,9 @@ public class StatServiceTest {
         var updatedSeries = taskSeriesService.updateSeries(seriesId, update, TEST_USER_ID);
         assertTrue(updatedSeries.statLinked());
 
-        Task retiredOccurrence = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId).stream()
-                .filter(task -> retiredDate.equals(task.getSeriesOccurrenceAt().toLocalDate())
-                        && oldTime.equals(task.getSeriesOccurrenceAt().toLocalTime()))
-                .findFirst()
-                .orElseThrow();
-        assertTrue(retiredOccurrence.isSkipped());
-        assertEquals(TaskSkipReason.SERIES_CHANGED, retiredOccurrence.getSkipReason());
+        assertTrue(taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId).stream()
+                .noneMatch(task -> retiredDate.equals(task.getSeriesOccurrenceAt().toLocalDate())
+                        && oldTime.equals(task.getSeriesOccurrenceAt().toLocalTime())));
 
         Task newOccurrence = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId).stream()
                 .filter(task -> newOccurrenceDate.equals(task.getSeriesOccurrenceAt().toLocalDate())

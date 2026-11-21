@@ -4591,6 +4591,8 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
         return () => window.clearTimeout(timer);
     }, [totalFocusLeaving]);
     const stageShown = totalFocus || totalFocusLeaving;
+    const focusSessionId = activePomodoro?.pomodoroId ?? initialPomodoroStatus?.pomodoroId
+        ?? activePomodoroTaskIdForRender ?? 'focus';
     // Remember where the pomodoro sits in the list, so total focus can start from there.
     useLayoutEffect(() => {
         if (!stageShown) rememberFocusOrigin(focusedPomodoroRowRef.current?.getBoundingClientRect() ?? null);
@@ -4598,7 +4600,12 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
 
     if (stageShown) {
         return (
-            <TotalFocusStage header={modeSwitch} leaving={!totalFocus}>
+            <TotalFocusStage
+                key={focusSessionId}
+                sessionId={focusSessionId}
+                header={modeSwitch}
+                leaving={!totalFocus}
+            >
                 {activePomodoroTask && renderTaskRow(activePomodoroTask)}
             </TotalFocusStage>
         );

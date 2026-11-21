@@ -50,7 +50,6 @@ export type PlannedBlock = Placed & PlannedInput & { row: number; columns: numbe
 // Bursts of app hopping read better as one block than as a barcode. Anything under ten minutes is
 // about 3px wide on a day strip, so runs that short are grouped into one switching block.
 const SHORT_MS = 10 * 60_000;
-const JOIN_GAP_MS = 5_000;
 const MAX_TITLES = 3;
 
 // Mid-tone hues, far enough apart to tell neighbours apart, that read on light and dark
@@ -89,7 +88,7 @@ function appRuns(segments: ScreenSegmentInput[]): AppRun[] {
     const runs: AppRun[] = [];
     for (const segment of segments) {
         const last = runs[runs.length - 1];
-        const run = last && last.appId === segment.appId && segment.start - last.end <= JOIN_GAP_MS
+        const run = last && last.appId === segment.appId && segment.start <= last.end
             ? last
             : null;
         const target = run ?? { appId: segment.appId, start: segment.start, end: segment.end, titleTimes: new Map() };
@@ -127,8 +126,9 @@ function activityBlocks(runs: AppRun[], nameOf: (appId: string) => string): Unpl
     };
     for (const run of runs) {
         const short = run.end - run.start < SHORT_MS;
-        // Any short run after a short run joins the burst, even across a gap: the gap is part of the switching.
-        const continuesBurst = burst.length > 0;
+        // Only contiguous runs belong to one burst. A gap is screen-off, away or
+        // untracked time and must stay visible even between brief app visits.
+        const continuesBurst = burst.length > 0 && run.start <= burst[burst.length - 1].end;
         if (short && (burst.length === 0 || continuesBurst)) {
             burst.push(run);
             continue;

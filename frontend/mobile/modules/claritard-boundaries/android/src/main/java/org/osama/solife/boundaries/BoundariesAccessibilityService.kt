@@ -50,7 +50,15 @@ class BoundariesAccessibilityService : AccessibilityService() {
         ShizukuBridge.ensureBound()
         lastTickAt = System.currentTimeMillis()
         screenUsable = isScreenUsable()
-        if (!screenUsable) UsageTracker.relockAll(applicationContext, lastTickAt, BoundariesPrefs.getRules(applicationContext))
+        val rules = BoundariesPrefs.getRules(applicationContext)
+        if (!screenUsable) UsageTracker.relockAll(applicationContext, lastTickAt, rules)
+        if (BoundariesPrefs.isEnforcementActive(applicationContext)) {
+            stopExpiredTimedApps(lastTickAt, screenUsable, rules)
+        }
+        SessionExpiryScheduler.scheduleNext(
+            applicationContext,
+            UsageTracker.nextTimedSessionExpiry(applicationContext, lastTickAt, rules),
+        )
         handler.removeCallbacks(ticker)
         handler.postDelayed(ticker, TICK_MS)
     }
@@ -122,6 +130,7 @@ class BoundariesAccessibilityService : AccessibilityService() {
         screenUsable = usable
         val rules = BoundariesPrefs.getRules(ctx)
         if (rules.isEmpty()) return
+        stopExpiredTimedApps(now, usable, rules)
 
         val fg = if (usable) resolveForegroundSteady() else null
         if (fg != currentFg) {
@@ -131,6 +140,19 @@ class BoundariesAccessibilityService : AccessibilityService() {
         val pkg = fg ?: return
         val rule = rules[pkg] ?: return
         handleVerdict(pkg, UsageTracker.onTick(ctx, rule, now, delta, labelFor(pkg)))
+    }
+
+    private fun stopExpiredTimedApps(now: Long, usable: Boolean, rules: Map<String, AppRule>) {
+        for (pkg in UsageTracker.expireTimedSessions(applicationContext, now, rules)) {
+            if (usable && currentFg == pkg) {
+                kick(pkg, "${labelFor(pkg)}: time's up for this open")
+            } else {
+                // A music app may still be streaming from a foreground service after its screen
+                // disappears. HOME cannot stop that service; force-stop the package itself.
+                killBackgroundProcess(pkg)
+                ShizukuBridge.forceStopPackage(pkg)
+            }
+        }
     }
 
     /**
@@ -263,11 +285,19 @@ class BoundariesAccessibilityService : AccessibilityService() {
 
         // Best-effort fallback for when Shizuku isn't set up: GLOBAL_ACTION_HOME alone leaves
         // the process running, so at least try to reap it as a background process.
-        val am = applicationContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        am.killBackgroundProcesses(packageName)
+        killBackgroundProcess(packageName)
 
         // The real fix, when available: force-stop via Shizuku (adb-shell privilege).
         ShizukuBridge.forceStopPackage(packageName)
+    }
+
+    private fun killBackgroundProcess(packageName: String) {
+        try {
+            val manager = applicationContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            manager.killBackgroundProcesses(packageName)
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not stop background process $packageName", e)
+        }
     }
 
     override fun onDestroy() {

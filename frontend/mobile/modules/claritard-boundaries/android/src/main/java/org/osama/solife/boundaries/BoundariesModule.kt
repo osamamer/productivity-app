@@ -100,6 +100,10 @@ class BoundariesModule : Module() {
         /** Replaces all rules. Password checks for loosening a rule happen in the UI first. */
         AsyncFunction("setRules") { json: String ->
             BoundariesPrefs.setRules(context, AppRule.listFromJson(json))
+            SessionExpiryScheduler.scheduleNext(
+                context,
+                UsageTracker.nextTimedSessionExpiry(context, System.currentTimeMillis(), BoundariesPrefs.getRules(context)),
+            )
             true
         }
 
@@ -140,6 +144,10 @@ class BoundariesModule : Module() {
             BoundariesForegroundService.cancelResume(context)
             BoundariesPrefs.setIndefinitelyDisabled(context, false)
             BoundariesPrefs.setPausedUntil(context, 0L)
+            SessionExpiryScheduler.scheduleNext(
+                context,
+                UsageTracker.nextTimedSessionExpiry(context, System.currentTimeMillis(), BoundariesPrefs.getRules(context)),
+            )
             BoundariesForegroundService.refreshNotification(context)
             true
         }

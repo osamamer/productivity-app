@@ -57,6 +57,10 @@
             android:name="org.osama.solife.boundaries.AutoResumeReceiver"
             android:exported="false" />
 
+        <receiver
+            android:name="org.osama.solife.boundaries.SessionExpiryReceiver"
+            android:exported="false" />
+
         <!-- Required by Shizuku: lets the separate Shizuku app deliver its privileged binder
              to this app once the user grants permission. -->
         <provider

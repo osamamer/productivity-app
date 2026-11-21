@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
     Box,
+    Button,
     Chip,
     Checkbox,
     Collapse,
@@ -9,6 +10,7 @@ import {
     ListItemText,
     Menu,
     MenuItem,
+    Popover,
     TextField,
     Typography,
 } from '@mui/material';
@@ -28,6 +30,8 @@ import { TaskSeriesTimeField } from '../task/TaskSeriesTimeField';
 import { TaskSchedulePicker } from '../task/TaskSchedulePicker';
 import { TaskReminderPicker } from '../task/TaskReminderPicker';
 import { SubtaskNameField } from '../task/SubtaskNameField';
+import { SubtaskBulkActions } from '../task/SubtaskSelection';
+import { useSubtaskSelection } from '../task/useSubtaskSelection';
 import { getTextOffsetAtPoint } from '../task/taskTextCaret';
 import { playAudioFeedback } from '../../services/audioFeedback';
 import {
@@ -74,7 +78,7 @@ type PomodoroStatsState = {
 type SubtaskListProps = {
     items: Task[];
     onToggle: (subtask: Task) => Promise<void>;
-    onDelete: (subtask: Task) => void;
+    onDelete: (subtask: Task) => Promise<void>;
     onUpdateName: (subtask: Task, name: string) => Promise<void>;
 };
 
@@ -280,10 +284,25 @@ const SubtaskList = React.memo(function SubtaskList({
     onUpdateName,
 }: SubtaskListProps) {
     const [contextMenu, setContextMenu] = useState<SubtaskContextMenuState | null>(null);
+    const [deleteConfirm, setDeleteConfirm] = useState<SubtaskContextMenuState | null>(null);
     const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
     const [localSubtaskName, setLocalSubtaskName] = useState('');
     const subtaskCommitRef = useRef<string | null>(null);
     const subtaskPointerDownRef = useRef<{ x: number; y: number } | null>(null);
+    const selection = useSubtaskSelection(items);
+
+    const setSelectedCompleted = async (completed: boolean) => {
+        await Promise.all(selection.selected.filter(item => item.completed !== completed).map(onToggle));
+    };
+
+    const renameSelected = async (name: string) => {
+        await Promise.all(selection.selected.filter(item => item.name !== name).map(item => onUpdateName(item, name)));
+    };
+
+    const deleteSelected = async () => {
+        await Promise.all(selection.selected.map(onDelete));
+        selection.clear();
+    };
 
     useEffect(() => {
         if (contextMenu && !items.some(item => item.taskId === contextMenu.subtask.taskId)) {
@@ -328,6 +347,12 @@ const SubtaskList = React.memo(function SubtaskList({
         <Box
             sx={{ minWidth: 0 }}
         >
+            <SubtaskBulkActions
+                selected={selection.selected}
+                onSetCompleted={setSelectedCompleted}
+                onRename={renameSelected}
+                onDelete={deleteSelected}
+            />
             {items.map(subtask => {
                 const isEditing = editingSubtaskId === subtask.taskId;
                 return (
@@ -347,6 +372,10 @@ const SubtaskList = React.memo(function SubtaskList({
                             alignItems: 'center',
                             minHeight: 38,
                             borderRadius: 1,
+                            backgroundColor: selection.selectedIds.length > 1
+                                && selection.selectedIds.includes(subtask.taskId)
+                                ? 'action.selected'
+                                : undefined,
                             '&:hover': { backgroundColor: 'action.hover' },
                         }}
                     >
@@ -359,6 +388,7 @@ const SubtaskList = React.memo(function SubtaskList({
                         <Box
                             data-subtask-text="true"
                             onMouseDown={event => {
+                                if (event.shiftKey || event.ctrlKey || event.metaKey) event.preventDefault();
                                 if (event.button === 0) {
                                     subtaskPointerDownRef.current = { x: event.clientX, y: event.clientY };
                                 }
@@ -372,9 +402,12 @@ const SubtaskList = React.memo(function SubtaskList({
                                 const moved = pointerDown !== null
                                     && (Math.abs(event.clientX - pointerDown.x) > 4
                                         || Math.abs(event.clientY - pointerDown.y) > 4);
-                                const selection = window.getSelection();
-                                if (moved || (selection && !selection.isCollapsed)) return;
+                                const textSelection = window.getSelection();
+                                if (!event.ctrlKey && !event.metaKey && !event.shiftKey
+                                    && (moved || (textSelection && !textSelection.isCollapsed))) return;
 
+                                selection.select(subtask, event);
+                                if (event.ctrlKey || event.metaKey || event.shiftKey) return;
                                 startEditing(subtask);
                             }}
                             sx={{
@@ -430,8 +463,9 @@ const SubtaskList = React.memo(function SubtaskList({
                         onClick={event => {
                             event.stopPropagation();
                             const subtask = contextMenu.subtask;
+                            const request = contextMenu;
                             setContextMenu(null);
-                            onDelete(subtask);
+                            setDeleteConfirm({ ...request, subtask });
                         }}
                         sx={{ color: 'error.main' }}
                     >
@@ -442,6 +476,26 @@ const SubtaskList = React.memo(function SubtaskList({
                     </MenuItem>
                 )}
             </Menu>
+            <Popover
+                open={deleteConfirm !== null}
+                onClose={() => setDeleteConfirm(null)}
+                anchorReference="anchorPosition"
+                anchorPosition={deleteConfirm
+                    ? { top: deleteConfirm.top, left: deleteConfirm.left }
+                    : undefined}
+            >
+                <Box sx={{ p: 1.5 }}>
+                    <Typography variant="body2">Delete “{deleteConfirm?.subtask.name}”?</Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 1 }}>
+                        <Button size="small" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+                        <Button size="small" color="error" onClick={() => {
+                            const subtask = deleteConfirm?.subtask;
+                            setDeleteConfirm(null);
+                            if (subtask) void onDelete(subtask);
+                        }}>Delete</Button>
+                    </Box>
+                </Box>
+            </Popover>
         </Box>
     );
 });
@@ -1356,7 +1410,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
                             <SubtaskList
                                 items={displayedSubtasks}
                                 onToggle={handleToggleSubtask}
-                                onDelete={subtask => void handleDeleteSubtask(subtask)}
+                                onDelete={handleDeleteSubtask}
                                 onUpdateName={handleUpdateSubtaskName}
                             />
                             {!visibleSubtaskState.loading && (

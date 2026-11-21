@@ -57,10 +57,11 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   const [subtaskSaving, setSubtaskSaving] = useState(false);
   const [pendingSubtaskId, setPendingSubtaskId] = useState<string | null>(null);
   const [subtaskError, setSubtaskError] = useState<string | null>(null);
+  const [selectedSubtaskIds, setSelectedSubtaskIds] = useState<string[]>([]);
+  const [bulkSubtaskBusy, setBulkSubtaskBusy] = useState(false);
   const taskNameInputRef = useRef<TextInput>(null);
   const subtaskInputRef = useRef<TextInput>(null);
   const pendingSubtaskIdRef = useRef<string | null>(null);
-  const deletingSubtaskIdRef = useRef<string | null>(null);
   const seriesRef = useRef<TaskSeries | null>(null);
   const repeatRef = useRef<TaskRecurrenceFrequency>('NONE');
   const recurrenceMutationRef = useRef<Promise<void>>(Promise.resolve());
@@ -75,6 +76,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     setSubtaskComposerOpen(false);
     setSubtaskName('');
     setSubtaskError(null);
+    setSelectedSubtaskIds([]);
   }
 
   useEffect(() => {
@@ -250,8 +252,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     }
   }
 
-  async function toggleSubtask(subtask: Task) {
-    const completed = !subtask.completed;
+  async function toggleSubtask(subtask: Task, completed = !subtask.completed) {
     setSubtasks(previous => previous.map(item => item.taskId === subtask.taskId ? { ...item, completed } : item));
     try {
       const updated = await api.tasks.update(subtask.taskId, { completed });
@@ -262,26 +263,44 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     }
   }
 
-  async function deleteSubtask(subtask: Task) {
-    if (deletingSubtaskIdRef.current) return;
-    if (!await confirm('Delete subtask?', `“${subtask.name}” will be deleted.`, 'Delete')) return;
-    if (deletingSubtaskIdRef.current) return;
-    deletingSubtaskIdRef.current = subtask.taskId;
-    const originalIndex = subtasks.findIndex(item => item.taskId === subtask.taskId);
-    setSubtasks(current => current.filter(item => item.taskId !== subtask.taskId));
-    setSubtaskError(null);
+  const selectedSubtasks = subtasks.filter(item => selectedSubtaskIds.includes(item.taskId));
+
+  function toggleSubtaskSelection(subtaskId: string) {
+    setSelectedSubtaskIds(current => current.includes(subtaskId)
+      ? current.filter(id => id !== subtaskId)
+      : [...current, subtaskId]);
+  }
+
+  async function setSelectedSubtasksCompleted() {
+    if (bulkSubtaskBusy || selectedSubtasks.length === 0) return;
+    const completed = !selectedSubtasks.every(item => item.completed);
+    setBulkSubtaskBusy(true);
     try {
-      await api.tasks.remove(subtask.taskId);
-    } catch (cause) {
-      setSubtasks(current => {
-        if (current.some(item => item.taskId === subtask.taskId)) return current;
-        const restored = [...current];
-        restored.splice(Math.min(originalIndex, restored.length), 0, subtask);
-        return restored;
-      });
-      setSubtaskError(reportError('Could not delete subtask', cause));
+      await Promise.all(selectedSubtasks.filter(item => item.completed !== completed)
+        .map(item => toggleSubtask(item, completed)));
     } finally {
-      deletingSubtaskIdRef.current = null;
+      setBulkSubtaskBusy(false);
+    }
+  }
+
+  async function deleteSelectedSubtasks() {
+    if (bulkSubtaskBusy || selectedSubtasks.length === 0) return;
+    if (!await confirm('Delete subtasks?', `${selectedSubtasks.length} selected subtasks will be deleted.`, 'Delete')) return;
+    setBulkSubtaskBusy(true);
+    const deletedIds: string[] = [];
+    try {
+      for (const subtask of selectedSubtasks) {
+        try {
+          await api.tasks.remove(subtask.taskId);
+          deletedIds.push(subtask.taskId);
+        } catch (cause) {
+          setSubtaskError(reportError('Could not delete subtask', cause));
+        }
+      }
+      setSubtasks(current => current.filter(item => !deletedIds.includes(item.taskId)));
+      setSelectedSubtaskIds(current => current.filter(id => !deletedIds.includes(id)));
+    } finally {
+      setBulkSubtaskBusy(false);
     }
   }
 
@@ -415,19 +434,36 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
             <AppText variant="label">Subtasks</AppText>
             {subtasks.length > 0 && <AppText variant="caption" color="muted">{subtasks.filter(item => item.completed).length}/{subtasks.length} done</AppText>}
           </View>
+          {selectedSubtasks.length > 0 && (
+            <View style={styles.subtaskSelectionActions}>
+              <AppText variant="caption" color="muted">{selectedSubtasks.length} selected</AppText>
+              <AppButton compact variant="ghost"
+                label={selectedSubtasks.every(item => item.completed) ? 'Reopen' : 'Complete'}
+                icon={selectedSubtasks.every(item => item.completed) ? 'refresh' : 'checkmark'}
+                loading={bulkSubtaskBusy} onPress={() => void setSelectedSubtasksCompleted()} />
+              <AppButton compact variant="ghost" label="Delete" icon="trash-outline"
+                loading={bulkSubtaskBusy} onPress={() => void deleteSelectedSubtasks()} />
+              <AppButton compact variant="ghost" label="Clear" icon="close"
+                onPress={() => setSelectedSubtaskIds([])} />
+            </View>
+          )}
           {subtasksLoading && <AppText variant="caption" color="muted">Loading subtasks…</AppText>}
           {subtasks.map(subtask => (
             <SilentPressable
               key={subtask.taskId}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: subtask.completed }}
+              accessibilityRole={selectedSubtasks.length ? 'button' : 'checkbox'}
+              accessibilityState={selectedSubtasks.length
+                ? { selected: selectedSubtaskIds.includes(subtask.taskId) }
+                : { checked: subtask.completed }}
               onPress={() => {
-                if (subtask.taskId !== pendingSubtaskId) void toggleSubtask(subtask);
+                if (subtask.taskId === pendingSubtaskId) return;
+                if (selectedSubtasks.length) toggleSubtaskSelection(subtask.taskId);
+                else void toggleSubtask(subtask);
               }}
-              onLongPress={() => { if (subtask.taskId !== pendingSubtaskId) void deleteSubtask(subtask); }}
-              accessibilityHint="Tap to update completion. Hold to delete."
-              style={({ pressed }) => [styles.subtaskRow, { borderColor: colors.border, backgroundColor: colors.background }, pressed && styles.pressed]}>
-              <Ionicons name={subtask.completed ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={subtask.completed ? colors.success : colors.textMuted} />
+              onLongPress={() => { if (subtask.taskId !== pendingSubtaskId) toggleSubtaskSelection(subtask.taskId); }}
+              accessibilityHint={selectedSubtasks.length ? 'Tap to select or deselect.' : 'Tap to update completion. Hold to select multiple.'}
+              style={({ pressed }) => [styles.subtaskRow, { borderColor: colors.border, backgroundColor: selectedSubtaskIds.includes(subtask.taskId) ? colors.accentSoft : colors.background }, pressed && styles.pressed]}>
+              <Ionicons name={selectedSubtaskIds.includes(subtask.taskId) ? 'checkmark-circle' : subtask.completed ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={selectedSubtaskIds.includes(subtask.taskId) ? colors.accent : subtask.completed ? colors.success : colors.textMuted} />
               <AppText variant="label" numberOfLines={2} style={[styles.subtaskName, styles.taskNameDirection, subtask.completed && styles.completed]}>{subtask.name}</AppText>
             </SilentPressable>
           ))}
@@ -546,6 +582,7 @@ const styles = StyleSheet.create({
   completeToggle: { width: 28, height: 30, alignItems: 'center', justifyContent: 'center' },
   subtasks: { gap: 8 },
   subtasksHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  subtaskSelectionActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   subtaskRow: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 9 },
   subtaskName: { flex: 1 },
   subtaskComposer: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },

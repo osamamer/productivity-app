@@ -16,5 +16,9 @@ class BoundariesBootReceiver : BroadcastReceiver() {
         if (pausedUntil > System.currentTimeMillis()) {
             BoundariesForegroundService.scheduleResume(context, pausedUntil)
         }
+        SessionExpiryScheduler.scheduleNext(
+            context,
+            UsageTracker.nextTimedSessionExpiry(context, System.currentTimeMillis(), BoundariesPrefs.getRules(context)),
+        )
     }
 }

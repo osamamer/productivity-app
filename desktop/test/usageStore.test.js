@@ -26,6 +26,25 @@ test('checkpoint pieces of one activity are merged back into one segment', () =>
     ]);
 });
 
+test('an off-screen gap between pieces of the same app remains a gap', () => {
+    const store = new UsageStore(temporaryDir());
+    const start = local(18, 9);
+    store.appendSegment({ start, end: start + 5_000, appId: 'firefox', title: 'Docs' });
+    store.appendSegment({ start: start + 5_001, end: start + 10_001, appId: 'firefox', title: 'Docs' });
+    store.appendTracked({ start, end: start + 5_000 });
+    store.appendTracked({ start: start + 5_001, end: start + 10_001 });
+
+    const { segments, tracked } = store.readRange(start, start + 10_001);
+    assert.deepEqual(segments.map(({ start, end }) => [start, end]), [
+        [start, start + 5_000],
+        [start + 5_001, start + 10_001],
+    ]);
+    assert.deepEqual(tracked.map(({ start, end }) => [start, end]), [
+        [start, start + 5_000],
+        [start + 5_001, start + 10_001],
+    ]);
+});
+
 test('focus passing through windows for a few seconds is not counted as using them', () => {
     const kept = dropBriefVisits([
         { start: 0, end: 2_900, appId: 'firefox', title: null },

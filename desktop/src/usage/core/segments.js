@@ -1,13 +1,15 @@
 // Segments are `{ start, end, appId, title }` (epoch ms); tracked intervals are `{ start, end }`.
 
-const MERGE_GAP_MS = 2000;
+// Only touching pieces are continuous. Even a brief gap may be a display-off
+// or tracking-off interval, so merging across it would turn unknown time into app time.
+const MERGE_GAP_MS = 0;
 
 function sameActivity(a, b) {
     return a.appId === b.appId && a.title === b.title;
 }
 
 /**
- * Joins touching or nearly touching pieces of the same activity, such as the pieces a periodic
+ * Joins touching pieces of the same activity, such as the pieces a periodic
  * checkpoint cuts a long stretch into. `same` decides which neighbours may be joined.
  */
 function mergeIntervals(items, same = () => true, gapMs = MERGE_GAP_MS) {

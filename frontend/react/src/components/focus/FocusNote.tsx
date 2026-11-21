@@ -2,6 +2,7 @@ import { KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { Box, InputBase } from '@mui/material';
 import { keyframes } from '@mui/system';
 import { notesService } from '../../services/api/notesService';
+import { PlacedFocusNote } from './focusNotes';
 
 const NOTE_TITLE_LENGTH = 60;
 
@@ -19,21 +20,22 @@ function titleOf(body: string): string {
  * A note written during total focus. It lives where it was placed and is saved as a real note on the
  * Notes page once typing pauses, so nothing is lost when focus ends. Its position is not kept.
  */
-export function FocusNote({ x, y, onDiscard }: { x: number; y: number; onDiscard: () => void }) {
-    const [text, setText] = useState('');
-    const textRef = useRef('');
-    const savedRef = useRef('');
-    const noteIdRef = useRef<Promise<string> | null>(null);
+export function FocusNote({ note, onDiscard }: { note: PlacedFocusNote; onDiscard: () => void }) {
+    const [text, setText] = useState(note.text);
+    const noteRef = useRef(note);
 
     const flush = useCallback(() => {
-        const body = textRef.current.trim();
-        if (body === savedRef.current) return;
-        if (!body && !noteIdRef.current) return;
-        savedRef.current = body;
-        noteIdRef.current ??= notesService.createNote(null).then(note => note.id);
-        noteIdRef.current
-            .then(id => notesService.updateNote(id, { title: titleOf(body), content: body }, true))
-            .catch(error => console.error('Could not save the focus note:', error));
+        const current = noteRef.current;
+        const body = current.text.trim();
+        if (body === current.savedText || (!body && !current.noteId)) return;
+        current.noteId ??= notesService.createNote(null).then(created => created.id);
+        const noteId = current.noteId;
+        current.pendingSave = current.pendingSave.then(async () => {
+            if (body === current.savedText) return;
+            const id = await noteId;
+            await notesService.updateNote(id, { title: titleOf(body), content: body }, true);
+            current.savedText = body;
+        }).catch(error => console.error('Could not save the focus note:', error));
     }, []);
 
     useEffect(() => {
@@ -53,8 +55,8 @@ export function FocusNote({ x, y, onDiscard }: { x: number; y: number; onDiscard
             data-focus-note
             sx={{
                 position: 'absolute',
-                left: x,
-                top: y,
+                left: note.x,
+                top: note.y,
                 width: 230,
                 p: 1.5,
                 borderRadius: 2.5,
@@ -74,12 +76,12 @@ export function FocusNote({ x, y, onDiscard }: { x: number; y: number; onDiscard
                 value={text}
                 placeholder="Write a note…"
                 onChange={event => {
-                    textRef.current = event.target.value;
+                    noteRef.current.text = event.target.value;
                     setText(event.target.value);
                 }}
                 onKeyDown={onKeyDown}
                 onBlur={() => {
-                    if (!textRef.current.trim()) onDiscard();
+                    if (!noteRef.current.text.trim()) onDiscard();
                     else flush();
                 }}
                 inputProps={{ 'aria-label': 'Focus note', maxLength: 2000 }}

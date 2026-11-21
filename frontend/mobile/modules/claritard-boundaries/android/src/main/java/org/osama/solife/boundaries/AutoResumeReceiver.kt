@@ -8,6 +8,10 @@ import android.content.Intent
 class AutoResumeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         BoundariesPrefs.setPausedUntil(context, 0L)
+        SessionExpiryScheduler.scheduleNext(
+            context,
+            UsageTracker.nextTimedSessionExpiry(context, System.currentTimeMillis(), BoundariesPrefs.getRules(context)),
+        )
         BoundariesForegroundService.refreshNotification(context)
     }
 }

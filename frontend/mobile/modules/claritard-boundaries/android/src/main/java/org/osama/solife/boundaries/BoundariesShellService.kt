@@ -1,5 +1,7 @@
 package org.osama.solife.boundaries
 
+import android.util.Log
+
 /**
  * Runs in the separate, privileged process Shizuku spawns (adb-shell UID) once the user grants
  * this app permission via the Shizuku app. Shelling out to `am force-stop` here runs it with
@@ -14,11 +16,14 @@ class BoundariesShellService : IBoundariesShellService.Stub() {
         System.exit(0)
     }
 
-    override fun forceStopPackage(packageName: String) {
-        try {
-            Runtime.getRuntime().exec(arrayOf("am", "force-stop", packageName)).waitFor()
+    override fun forceStopPackage(packageName: String): Boolean {
+        return try {
+            val exitCode = Runtime.getRuntime().exec(arrayOf("am", "force-stop", packageName)).waitFor()
+            if (exitCode != 0) Log.w("BoundariesShell", "force-stop failed for $packageName: exit=$exitCode")
+            exitCode == 0
         } catch (e: Exception) {
-            // Best-effort - nothing more to do from here if the shell command itself fails.
+            Log.w("BoundariesShell", "Could not force-stop $packageName", e)
+            false
         }
     }
 

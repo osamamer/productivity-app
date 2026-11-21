@@ -3,6 +3,7 @@ import { Box } from '@mui/material';
 import { keyframes } from '@mui/system';
 import { FocusNote } from './FocusNote';
 import { takeFocusOrigin } from './focusOrigin';
+import { focusNotesForSession, rememberFocusNotes, PlacedFocusNote } from './focusNotes';
 
 const fadeIn = keyframes`
     from { opacity: 0; }
@@ -16,12 +17,6 @@ const fadeOut = keyframes`
 const GLIDE_MS = 380;
 const GLIDE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 
-interface PlacedNote {
-    id: number;
-    x: number;
-    y: number;
-}
-
 // Clicks on these leave the page alone: they are controls or text the person is already using.
 const INTERACTIVE_SELECTOR = 'button, a, input, textarea, [contenteditable], [data-focus-card], [data-focus-note]';
 
@@ -29,9 +24,9 @@ const INTERACTIVE_SELECTOR = 'button, a, input, textarea, [contenteditable], [da
  * The whole screen during total focus: the running pomodoro in the middle, and a click anywhere
  * else starts a note right where it was clicked.
  */
-export function TotalFocusStage({ header, children, leaving = false }: { header: ReactNode; children: ReactNode; leaving?: boolean }) {
-    const [notes, setNotes] = useState<PlacedNote[]>([]);
-    const nextId = useRef(0);
+export function TotalFocusStage({ sessionId, header, children, leaving = false }: { sessionId: string; header: ReactNode; children: ReactNode; leaving?: boolean }) {
+    const [notes, setNotes] = useState<PlacedFocusNote[]>(() => focusNotesForSession(sessionId));
+    const nextId = useRef(Math.max(0, ...notes.map(note => note.id + 1)));
     const cardRef = useRef<HTMLDivElement>(null);
 
     // The card glides from where the pomodoro was in the list to the middle of the screen.
@@ -58,7 +53,11 @@ export function TotalFocusStage({ header, children, leaving = false }: { header:
         if ((event.target as HTMLElement).closest(INTERACTIVE_SELECTOR)) return;
         const { clientX, clientY } = event;
         const id = nextId.current++;
-        setNotes(current => [...current, { id, x: clientX, y: clientY }]);
+        setNotes(current => {
+            const updated = [...current, { id, x: clientX, y: clientY, text: '', savedText: '', noteId: null, pendingSave: Promise.resolve() }];
+            rememberFocusNotes(sessionId, updated);
+            return updated;
+        });
     };
 
     return (
@@ -83,9 +82,12 @@ export function TotalFocusStage({ header, children, leaving = false }: { header:
             {notes.map(note => (
                 <FocusNote
                     key={note.id}
-                    x={note.x}
-                    y={note.y}
-                    onDiscard={() => setNotes(current => current.filter(item => item.id !== note.id))}
+                    note={note}
+                    onDiscard={() => setNotes(current => {
+                        const updated = current.filter(item => item.id !== note.id);
+                        rememberFocusNotes(sessionId, updated);
+                        return updated;
+                    })}
                 />
             ))}
         </Box>

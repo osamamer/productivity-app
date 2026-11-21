@@ -87,7 +87,13 @@ object UsageTracker {
         val today = todayKey(now)
         if (day != today) {
             day = today
+            val stillOpen = apps.filterValues { it.sessionActive }
+                .mapValues { (_, previous) -> AppUsage(
+                    sessionActive = true,
+                    sessionStartedAt = previous.sessionStartedAt,
+                ) }
             apps.clear()
+            apps.putAll(stillOpen)
             dirty = true
         }
     }
@@ -195,6 +201,7 @@ object UsageTracker {
         u.warned = false
         dirty = true
         save(context, now, force = true)
+        SessionExpiryScheduler.scheduleNext(context, nextTimedSessionExpiry(context, now, BoundariesPrefs.getRules(context)))
 
         val parts = ArrayList<String>()
         if (rule.maxOpens > 0) parts.add("open ${u.opens} of ${rule.maxOpens}")
@@ -237,6 +244,7 @@ object UsageTracker {
         if (left <= 0) {
             u.sessionActive = false
             save(context, now, force = true)
+            SessionExpiryScheduler.scheduleNext(context, nextTimedSessionExpiry(context, now, BoundariesPrefs.getRules(context)))
             return if (dailyLeft <= 0) {
                 Verdict.Block("$label: daily limit of ${rule.dailyLimitMin} min reached")
             } else {
@@ -272,6 +280,7 @@ object UsageTracker {
             }
         }
         save(context, now, force = true)
+        SessionExpiryScheduler.scheduleNext(context, nextTimedSessionExpiry(context, now, rules))
     }
 
     /** The app was kicked out: its current open is over. */
@@ -283,6 +292,40 @@ object UsageTracker {
             dirty = true
         }
         save(context, now, force = true)
+        SessionExpiryScheduler.scheduleNext(context, nextTimedSessionExpiry(context, now, BoundariesPrefs.getRules(context)))
+    }
+
+    /** Timed opens expire on the wall clock, including while the screen is locked or another app is in front. */
+    @Synchronized
+    fun expireTimedSessions(context: Context, now: Long, rules: Map<String, AppRule>): List<String> {
+        ensureLoaded(context, now)
+        val calendar = Calendar.getInstance().apply { timeInMillis = now }
+        var changed = false
+        val expired = apps.mapNotNull { (pkg, usage) ->
+            val rule = rules[pkg] ?: return@mapNotNull null
+            if (usage.sessionActive && rule.sessionMin > 0 && sessionLeftMs(usage, rule, now) <= 0) {
+                usage.sessionActive = false
+                dirty = true
+                changed = true
+                // Expire the open even when its limit window has ended, but do not stop an app
+                // while its rule currently allows unrestricted use.
+                pkg.takeIf { rule.limitsInForceAt(calendar) }
+            } else null
+        }
+        if (changed) {
+            save(context, now, force = true)
+            SessionExpiryScheduler.scheduleNext(context, nextTimedSessionExpiry(context, now, rules))
+        }
+        return expired
+    }
+
+    @Synchronized
+    fun nextTimedSessionExpiry(context: Context, now: Long, rules: Map<String, AppRule>): Long? {
+        ensureLoaded(context, now)
+        return apps.mapNotNull { (pkg, usage) ->
+            val minutes = rules[pkg]?.sessionMin ?: 0
+            if (usage.sessionActive && minutes > 0) usage.sessionStartedAt + minutes * 60_000L else null
+        }.minOrNull()
     }
 
     /**

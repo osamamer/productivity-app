@@ -11,8 +11,11 @@ Autolinked as a local Expo module; there is no iOS or web implementation (`Bound
   can be left and reopened freely without counting another open or showing the countdown. With a
   time per open, the open lasts that long on the clock from the unlock, through screen locks (so
   music can play with the screen off); without one, it ends when the screen locks or turns off.
-  Being kicked out also ends it. Daily time only counts while the app is in front with the screen
-  on and unlocked; counts reset at local midnight.
+  At expiry, the app is force-stopped even if its audio service is still playing behind a locked
+  screen. The accessibility ticker enforces this while awake and an alarm wakes it as a fallback.
+  Being kicked out also ends the open. Daily time only counts while the app is in front with the
+  screen on and unlocked; counts reset at local midnight, while an ongoing timed open keeps its
+  original deadline.
 - `BoundaryDelayOverlay` is the "pause before opening": a full-screen countdown (styled like the
   desktop countdown window) drawn over a locked app before it unlocks. Leaving the app or turning
   the screen off resets it, but a return within three seconds resumes it, because foreground
@@ -25,7 +28,9 @@ Autolinked as a local Expo module; there is no iOS or web implementation (`Bound
   and pauses enforcement for five minutes (`AutoResumeReceiver` resumes it). Every password the
   screens ask for is followed by a ten second wait before it takes effect (`usePasswordWait`).
 - `ShizukuBridge` + `BoundariesShellService` optionally force-stop blocked apps with adb-shell
-  privilege, and can turn the accessibility service on where Android marks it "restricted" for
+  privilege, including their background audio services. Stop requests made while Shizuku is
+  binding are retried briefly. Without Shizuku permission, Android only permits a best-effort
+  background-process kill. Shizuku can also turn the accessibility service on where Android marks it "restricted" for
   sideloaded apps. Shizuku's server must be restarted after every reboot on unrooted phones.
 - `BoundariesAdminReceiver` (device admin) and the service's uninstall guard add friction to
   uninstalling Claritard. Neither is a guarantee: ADB, safe mode or a factory reset still work.

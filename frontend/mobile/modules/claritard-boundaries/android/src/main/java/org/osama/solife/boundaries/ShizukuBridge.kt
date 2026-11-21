@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import rikka.shizuku.Shizuku
 import java.util.concurrent.Callable
@@ -40,6 +41,7 @@ object ShizukuBridge {
     private const val TAG = "ShizukuBridge"
     private const val PERMISSION_REQUEST_CODE = 411
     private const val CALL_TIMEOUT_MS = 800L
+    private const val STOP_REQUEST_LIFETIME_MS = 20_000L
 
     // Cached pool, not a single thread: if one call genuinely hangs forever on a dead Binder,
     // it just leaks that one thread - it must never block later calls from getting a fresh one.
@@ -58,19 +60,21 @@ object ShizukuBridge {
     @Volatile private var packageName: String? = null
     @Volatile private var binding = false
     @Volatile private var initialized = false
+    private val pendingStops = HashMap<String, Long>()
 
     private val userServiceArgs by lazy {
         Shizuku.UserServiceArgs(ComponentName(packageName ?: error("ShizukuBridge.initialize was not called"), BoundariesShellService::class.java.name))
             .daemon(false)
             .processNameSuffix("boundaries_shell")
             .debuggable(false)
-            .version(1) // Bump whenever the AIDL changes so Shizuku restarts a stale service.
+            .version(2) // Bump whenever the AIDL changes so Shizuku restarts a stale service.
     }
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
             userService = if (binder.pingBinder()) IBoundariesShellService.Stub.asInterface(binder) else null
             binding = false
+            dispatchPendingStops()
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
@@ -149,24 +153,41 @@ object ShizukuBridge {
         false
     }
 
-    /**
-     * Best-effort, fire-and-forget: silently does nothing if Shizuku isn't installed, not
-     * granted, or not yet bound. Never waits for a result - this is called from the
-     * accessibility service's event-handling hot path, and a hang here must never delay or
-     * drop other accessibility events.
-     */
+    /** Queue a recent stop until the privileged service binds, without blocking accessibility. */
     fun forceStopPackage(packageName: String) {
+        synchronized(pendingStops) {
+            pendingStops[packageName] = SystemClock.elapsedRealtime() + STOP_REQUEST_LIFETIME_MS
+        }
+        dispatchPendingStops()
+    }
+
+    private fun dispatchPendingStops() {
         val service = userService
         if (service == null) {
             ensureBound()
             return
         }
+        val now = SystemClock.elapsedRealtime()
+        val requests = synchronized(pendingStops) {
+            val ready = pendingStops.filterValues { it > now }.toMap()
+            pendingStops.clear()
+            ready
+        }
+        if (requests.isEmpty()) return
         ioExecutor.execute {
-            try {
-                service.forceStopPackage(packageName)
-            } catch (e: Throwable) {
-                Log.d(TAG, "forceStopPackage: call failed, will rebind next time", e)
-                userService = null
+            for ((packageName, expiry) in requests) {
+                try {
+                    if (!service.forceStopPackage(packageName)) {
+                        Log.w(TAG, "forceStopPackage: privileged command failed for $packageName")
+                    }
+                } catch (e: Throwable) {
+                    Log.w(TAG, "forceStopPackage: call failed for $packageName; rebinding", e)
+                    synchronized(pendingStops) {
+                        if (SystemClock.elapsedRealtime() < expiry) pendingStops[packageName] = expiry
+                    }
+                    userService = null
+                    ensureBound()
+                }
             }
         }
     }

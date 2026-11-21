@@ -69,6 +69,8 @@ import {
 } from '../services/cache/taskDetailsCache';
 import { PomodoroNumberField } from './timer/PomodoroNumberField';
 import { SubtaskNameField } from './task/SubtaskNameField';
+import { SubtaskBulkActions } from './task/SubtaskSelection';
+import { useSubtaskSelection } from './task/useSubtaskSelection';
 import { getTextOffsetAtPoint } from './task/taskTextCaret';
 import { AppDateField } from './input/AppPickerFields';
 import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from './task/TaskRecurrencePicker';
@@ -354,10 +356,12 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const initialTaskDetails = getStaleTaskDetails(task.taskId);
     const [detailsReady, setDetailsReady] = useState(() => Boolean(initialTaskDetails));
     const [subtasks, setSubtasks] = useState<Task[]>(() => sortSubtasks(initialTaskDetails?.subtasks ?? EMPTY_SUBTASKS));
+    const subtaskSelection = useSubtaskSelection(subtasks);
     const [subtaskDraft, setSubtaskDraft] = useState({ taskId: task.taskId, name: '' });
     const visibleSubtaskDraft = subtaskDraft.taskId === task.taskId ? subtaskDraft.name : '';
     const [newSubtaskId, setNewSubtaskId] = useState<string | null>(null);
     const [subtaskContextMenu, setSubtaskContextMenu] = useState<SubtaskContextMenuState | null>(null);
+    const [subtaskDeleteConfirm, setSubtaskDeleteConfirm] = useState<SubtaskContextMenuState | null>(null);
     const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
     const [localSubtaskName, setLocalSubtaskName] = useState('');
     const initialTaskSeries = initialTaskDetails?.taskSeries;
@@ -996,18 +1000,20 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         handleStartBreakEarly();
     };
 
-    const handleSubtaskToggle = async (subtask: Task) => {
-        const completed = !subtask.completed;
-        const optimisticSubtasks = subtasks.map(item => item.taskId === subtask.taskId
-            ? { ...item, completed }
-            : item);
-        setSubtasks(optimisticSubtasks);
-        updateCachedTaskDetails(task.taskId, { subtasks: optimisticSubtasks }, {
-            task,
-            subtasks: optimisticSubtasks,
-            taskSeries: taskSeriesRef.current,
+    const handleSubtaskToggle = async (subtask: Task, desiredCompleted = !subtask.completed, quiet = false) => {
+        const completed = desiredCompleted;
+        setSubtasks(previous => {
+            const optimisticSubtasks = previous.map(item => item.taskId === subtask.taskId
+                ? { ...item, completed }
+                : item);
+            updateCachedTaskDetails(task.taskId, { subtasks: optimisticSubtasks }, {
+                task,
+                subtasks: optimisticSubtasks,
+                taskSeries: taskSeriesRef.current,
+            });
+            return optimisticSubtasks;
         });
-        if (!subtask.completed && completed) playAudioFeedback('taskCompleted');
+        if (!quiet && !subtask.completed && completed) playAudioFeedback('taskCompleted');
 
         try {
             const updatedSubtask = await taskService.toggleTaskCompletion(subtask.taskId, completed);
@@ -1036,6 +1042,38 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             });
             console.error('Error toggling Home subtask completion:', error);
         }
+    };
+
+    const handleBulkSubtaskCompletion = async (completed: boolean) => {
+        await Promise.all(subtaskSelection.selected.filter(item => item.completed !== completed)
+            .map(item => handleSubtaskToggle(item, completed, true)));
+        if (completed) playAudioFeedback('taskCompleted');
+    };
+
+    const handleBulkSubtaskRename = async (name: string) => {
+        const selected = subtaskSelection.selected.filter(item => item.name !== name);
+        await Promise.all(selected.map(async subtask => {
+            setSubtasks(previous => {
+                const updated = previous.map(item => item.taskId === subtask.taskId ? { ...item, name } : item);
+                updateCachedTaskDetails(task.taskId, { subtasks: updated }, { task, subtasks: updated, taskSeries: taskSeriesRef.current });
+                return updated;
+            });
+            try {
+                await taskService.updateTask(subtask.taskId, { name });
+            } catch (error) {
+                setSubtasks(previous => {
+                    const restored = previous.map(item => item.taskId === subtask.taskId ? { ...item, name: subtask.name } : item);
+                    updateCachedTaskDetails(task.taskId, { subtasks: restored }, { task, subtasks: restored, taskSeries: taskSeriesRef.current });
+                    return restored;
+                });
+                console.error('Error renaming selected subtask:', error);
+            }
+        }));
+    };
+
+    const handleBulkSubtaskDelete = async () => {
+        await Promise.all(subtaskSelection.selected.map(handleSubtaskDelete));
+        subtaskSelection.clear();
     };
 
     const handleSubtaskDelete = async (subtask: Task) => {
@@ -2198,6 +2236,13 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         >
                             Subtasks {subtasks.length > 0 ? `· ${subtasks.filter(subtask => subtask.completed).length}/${subtasks.length}` : ''}
                         </Typography>
+                        <SubtaskBulkActions
+                            selected={subtaskSelection.selected}
+                            onSetCompleted={handleBulkSubtaskCompletion}
+                            onRename={handleBulkSubtaskRename}
+                            onDelete={handleBulkSubtaskDelete}
+                            canDelete={subtaskSelection.selected.every(item => !item.mentalThreadId)}
+                        />
                         {subtasks.map(subtask => {
                             const isEditingSubtask = editingSubtaskId === subtask.taskId;
                             return (
@@ -2218,6 +2263,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         alignItems: 'center',
                                         minHeight: 42,
                                         py: 0.25,
+                                        borderRadius: 1,
+                                        backgroundColor: subtaskSelection.selectedIds.length > 1
+                                            && subtaskSelection.selectedIds.includes(subtask.taskId)
+                                            ? 'action.selected'
+                                            : undefined,
                                         animation: newSubtaskId === subtask.taskId
                                             ? `${subtaskFadeIn} 120ms ease-out`
                                             : undefined,
@@ -2233,6 +2283,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     <Box
                                         data-subtask-text="true"
                                         onMouseDown={event => {
+                                            if (event.shiftKey || event.ctrlKey || event.metaKey) event.preventDefault();
                                             if (event.button === 0) {
                                                 subtaskPointerDownRef.current = { x: event.clientX, y: event.clientY };
                                             }
@@ -2247,8 +2298,10 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                                 && (Math.abs(event.clientX - pointerDown.x) > 4
                                                     || Math.abs(event.clientY - pointerDown.y) > 4);
                                             const selection = window.getSelection();
-                                            if (moved || selection && !selection.isCollapsed) return;
-
+                                            if (!event.ctrlKey && !event.metaKey && !event.shiftKey
+                                                && (moved || selection && !selection.isCollapsed)) return;
+                                            subtaskSelection.select(subtask, event);
+                                            if (event.ctrlKey || event.metaKey || event.shiftKey) return;
                                             startSubtaskEditing(subtask);
                                         }}
                                         sx={{
@@ -2321,8 +2374,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         onClick={event => {
                                             event.stopPropagation();
                                             const subtask = subtaskContextMenu.subtask;
+                                            const request = subtaskContextMenu;
                                             setSubtaskContextMenu(null);
-                                            void handleSubtaskDelete(subtask);
+                                            setSubtaskDeleteConfirm({ ...request, subtask });
                                         }}
                                         sx={{ color: 'error.main' }}
                                     >
@@ -2334,6 +2388,26 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 )}
                             </Menu>
                         )}
+                        <Popover
+                            open={subtaskDeleteConfirm !== null}
+                            onClose={() => setSubtaskDeleteConfirm(null)}
+                            anchorReference="anchorPosition"
+                            anchorPosition={subtaskDeleteConfirm
+                                ? { top: subtaskDeleteConfirm.top, left: subtaskDeleteConfirm.left }
+                                : undefined}
+                        >
+                            <Box sx={{ p: 1.5 }}>
+                                <Typography variant="body2">Delete “{subtaskDeleteConfirm?.subtask.name}”?</Typography>
+                                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 1 }}>
+                                    <Button size="small" onClick={() => setSubtaskDeleteConfirm(null)}>Cancel</Button>
+                                    <Button size="small" color="error" onClick={() => {
+                                        const subtask = subtaskDeleteConfirm?.subtask;
+                                        setSubtaskDeleteConfirm(null);
+                                        if (subtask) void handleSubtaskDelete(subtask);
+                                    }}>Delete</Button>
+                                </Box>
+                            </Box>
+                        </Popover>
                     </Box>
 
                     {/* Tag (read-only) */}
