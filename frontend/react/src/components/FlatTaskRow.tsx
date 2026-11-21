@@ -2242,8 +2242,9 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             onRename={handleBulkSubtaskRename}
                             onDelete={handleBulkSubtaskDelete}
                             canDelete={subtaskSelection.selected.every(item => !item.mentalThreadId)}
+                            onClear={subtaskSelection.clear}
                         />
-                        {subtasks.map(subtask => {
+                        {subtasks.map((subtask, subtaskIndex) => {
                             const isEditingSubtask = editingSubtaskId === subtask.taskId;
                             return (
                                 <Box
@@ -2258,20 +2259,16 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                             left: event.clientX,
                                         });
                                     }}
-                                    sx={{
+                                    sx={[{
                                         display: 'flex',
                                         alignItems: 'center',
                                         minHeight: 42,
                                         py: 0.25,
                                         borderRadius: 1,
-                                        backgroundColor: subtaskSelection.selectedIds.length > 1
-                                            && subtaskSelection.selectedIds.includes(subtask.taskId)
-                                            ? 'action.selected'
-                                            : undefined,
                                         animation: newSubtaskId === subtask.taskId
                                             ? `${subtaskFadeIn} 120ms ease-out`
                                             : undefined,
-                                    }}
+                                    }, subtaskSelection.rowSx(subtaskIndex)].flat()}
                                 >
                                     <Checkbox
                                         size="small"

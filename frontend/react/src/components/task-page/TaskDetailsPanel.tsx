@@ -352,8 +352,9 @@ const SubtaskList = React.memo(function SubtaskList({
                 onSetCompleted={setSelectedCompleted}
                 onRename={renameSelected}
                 onDelete={deleteSelected}
+                onClear={selection.clear}
             />
-            {items.map(subtask => {
+            {items.map((subtask, index) => {
                 const isEditing = editingSubtaskId === subtask.taskId;
                 return (
                     <Box
@@ -367,17 +368,13 @@ const SubtaskList = React.memo(function SubtaskList({
                                 left: event.clientX,
                             });
                         }}
-                        sx={{
+                        sx={[{
                             display: 'flex',
                             alignItems: 'center',
                             minHeight: 38,
                             borderRadius: 1,
-                            backgroundColor: selection.selectedIds.length > 1
-                                && selection.selectedIds.includes(subtask.taskId)
-                                ? 'action.selected'
-                                : undefined,
                             '&:hover': { backgroundColor: 'action.hover' },
-                        }}
+                        }, selection.rowSx(index)].flat()}
                     >
                         <Checkbox
                             size="small"

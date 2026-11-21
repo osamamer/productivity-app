@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { Box, Button, IconButton, Popover, TextField, Typography } from '@mui/material';
+import { alpha } from '@mui/material/styles';
+import CloseIcon from '@mui/icons-material/Close';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ReplayIcon from '@mui/icons-material/Replay';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -12,9 +14,12 @@ type SubtaskBulkActionsProps = {
     onRename: (name: string) => Promise<void>;
     onDelete: () => Promise<void>;
     canDelete?: boolean;
+    onClear: () => void;
 };
 
-export function SubtaskBulkActions({ selected, onSetCompleted, onRename, onDelete, canDelete = true }: SubtaskBulkActionsProps) {
+const actionSx = { textTransform: 'none', minWidth: 0, px: 1, py: 0.25, fontSize: 13 } as const;
+
+export function SubtaskBulkActions({ selected, onSetCompleted, onRename, onDelete, canDelete = true, onClear }: SubtaskBulkActionsProps) {
     const [busy, setBusy] = useState(false);
     const [renameAnchor, setRenameAnchor] = useState<HTMLElement | null>(null);
     const [deleteAnchor, setDeleteAnchor] = useState<HTMLElement | null>(null);
@@ -32,21 +37,29 @@ export function SubtaskBulkActions({ selected, onSetCompleted, onRename, onDelet
     };
 
     return (
-        <Box onClick={event => event.stopPropagation()} sx={{ display: 'flex', alignItems: 'center', gap: 0.25, px: 0.5, py: 0.25, borderRadius: 2, bgcolor: 'action.selected' }}>
-            <Typography variant="caption" sx={{ mr: 'auto', px: 0.5 }}>{selected.length} selected</Typography>
-            <IconButton size="small" disabled={busy} aria-label={allCompleted ? 'Reopen selected subtasks' : 'Complete selected subtasks'}
-                title={allCompleted ? 'Reopen selected subtasks' : 'Complete selected subtasks'}
+        <Box onClick={event => event.stopPropagation()} sx={{
+            display: 'flex', alignItems: 'center', gap: 0.25, mb: 0.5, pl: 1.25, pr: 0.25, py: 0.25,
+            borderRadius: 2, border: 1,
+            borderColor: theme => alpha(theme.palette.primary.main, 0.35),
+            bgcolor: theme => alpha(theme.palette.primary.main, 0.06),
+        }}>
+            <Typography variant="body2" sx={{ mr: 'auto', fontWeight: 600, color: 'primary.main' }}>{selected.length} selected</Typography>
+            <Button size="small" disabled={busy} sx={actionSx}
+                startIcon={allCompleted ? <ReplayIcon fontSize="small" /> : <CheckCircleOutlineIcon fontSize="small" />}
                 onClick={() => void run(() => onSetCompleted(!allCompleted))}>
-                {allCompleted ? <ReplayIcon fontSize="small" /> : <CheckCircleOutlineIcon fontSize="small" />}
-            </IconButton>
-            <IconButton size="small" disabled={busy} aria-label="Rename selected subtasks" title="Rename selected subtasks"
+                {allCompleted ? 'Reopen' : 'Complete'}
+            </Button>
+            <Button size="small" disabled={busy} sx={actionSx} startIcon={<DriveFileRenameOutlineIcon fontSize="small" />}
                 onClick={event => { setName(''); setRenameAnchor(event.currentTarget); }}>
-                <DriveFileRenameOutlineIcon fontSize="small" />
-            </IconButton>
-            {canDelete && <IconButton size="small" color="error" disabled={busy} aria-label="Delete selected subtasks" title="Delete selected subtasks"
+                Rename
+            </Button>
+            {canDelete && <Button size="small" color="error" disabled={busy} sx={actionSx} startIcon={<DeleteOutlineIcon fontSize="small" />}
                 onClick={event => setDeleteAnchor(event.currentTarget)}>
-                <DeleteOutlineIcon fontSize="small" />
-            </IconButton>}
+                Delete
+            </Button>}
+            <IconButton size="small" aria-label="Clear selection" title="Clear selection" onClick={onClear} sx={{ ml: 0.25 }}>
+                <CloseIcon fontSize="small" />
+            </IconButton>
             <Popover open={renameAnchor !== null} anchorEl={renameAnchor} onClose={() => setRenameAnchor(null)}>
                 <Box component="form" onSubmit={event => {
                     event.preventDefault();

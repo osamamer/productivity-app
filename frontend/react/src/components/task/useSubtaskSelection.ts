@@ -1,4 +1,5 @@
 import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { alpha, SxProps, Theme } from '@mui/material/styles';
 import { Task } from '../../types/Task';
 
 export function useSubtaskSelection(items: Task[]) {
@@ -32,5 +33,24 @@ export function useSubtaskSelection(items: Task[]) {
         anchorId.current = id;
     };
 
-    return { selected, selectedIds, select, clear: () => setSelectedIds([]) };
+    const isMarked = (index: number) => selectedIds.length > 1
+        && index >= 0 && index < items.length && selectedIds.includes(items[index].taskId);
+
+    // Adjacent selected rows join into one block so a range reads as a single selection.
+    const rowSx = (index: number): SxProps<Theme> => {
+        if (!isMarked(index)) return {};
+        const joinedAbove = isMarked(index - 1);
+        const joinedBelow = isMarked(index + 1);
+        return {
+            backgroundColor: theme => alpha(theme.palette.primary.main, 0.1),
+            boxShadow: theme => `inset 3px 0 0 ${theme.palette.primary.main}`,
+            borderTopLeftRadius: joinedAbove ? 0 : 6,
+            borderTopRightRadius: joinedAbove ? 0 : 6,
+            borderBottomLeftRadius: joinedBelow ? 0 : 6,
+            borderBottomRightRadius: joinedBelow ? 0 : 6,
+            '&:hover': { backgroundColor: theme => alpha(theme.palette.primary.main, 0.14) },
+        };
+    };
+
+    return { selected, selectedIds, select, rowSx, clear: () => setSelectedIds([]) };
 }
