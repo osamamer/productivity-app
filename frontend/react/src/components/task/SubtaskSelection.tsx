@@ -38,7 +38,7 @@ export function SubtaskBulkActions({ selected, onSetCompleted, onRename, onDelet
 
     return (
         <Box onClick={event => event.stopPropagation()} sx={{
-            display: 'flex', alignItems: 'center', gap: 0.25, mb: 0.5, pl: 1.25, pr: 0.25, py: 0.25,
+            display: 'flex', alignItems: 'center', gap: 0.25, mt: 1, mb: 1, pl: 1.25, pr: 0.25, py: 0.25,
             borderRadius: 2, border: 1,
             borderColor: theme => alpha(theme.palette.primary.main, 0.35),
             bgcolor: theme => alpha(theme.palette.primary.main, 0.06),

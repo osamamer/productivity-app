@@ -2264,6 +2264,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                         alignItems: 'center',
                                         minHeight: 42,
                                         py: 0.25,
+                                        px: 0.5,
                                         borderRadius: 1,
                                         animation: newSubtaskId === subtask.taskId
                                             ? `${subtaskFadeIn} 120ms ease-out`

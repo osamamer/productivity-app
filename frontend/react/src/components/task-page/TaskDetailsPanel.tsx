@@ -372,6 +372,7 @@ const SubtaskList = React.memo(function SubtaskList({
                             display: 'flex',
                             alignItems: 'center',
                             minHeight: 38,
+                            px: 0.5,
                             borderRadius: 1,
                             '&:hover': { backgroundColor: 'action.hover' },
                         }, selection.rowSx(index)].flat()}
