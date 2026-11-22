@@ -12,6 +12,5 @@ class AutoResumeReceiver : BroadcastReceiver() {
             context,
             UsageTracker.nextTimedSessionExpiry(context, System.currentTimeMillis(), BoundariesPrefs.getRules(context)),
         )
-        BoundariesForegroundService.refreshNotification(context)
     }
 }

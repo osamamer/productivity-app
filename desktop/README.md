@@ -125,7 +125,9 @@ computer, in local and cloud mode alike. It replaces the separate App Timeout to
   systemd user timer is armed as a backstop, so the limit holds even if Claritard quits.
 - **Firefox site timers.** The **Claritard URL Gate** extension (`firefox-extension/`) sends timed
   sites to a countdown page. Opening one starts a Firefox session; every timed site opened in it
-  shares that deadline, which survives closing Firefox. At the end Claritard closes Firefox.
+  shares that deadline, which survives closing Firefox or the last timed tab. The countdown
+  window hides when no timed tab is open and returns when one reopens. At the deadline the timer
+  still closes Firefox. Tab visibility requires URL Gate 1.1.2 or later.
   Setup: Boundaries → **Connect** (installs the native messaging host), then load the extension
   from **Open extension folder** in `about:debugging`, or build `dist/claritard-url-gate.xpi` with
   `npm run build:extension`. A permanent install needs the add-on signed on addons.mozilla.org
@@ -217,6 +219,9 @@ tested).
 - **Brief visits.** Focus passes through windows for a moment when a switcher cycles, a window
   closes or an app starts. Visits to one app shorter than 5 s are recorded but left out when the
   page reads screen time (`dropBriefVisits` in `src/usage/core/segments.js`).
+- **Activity assignments.** In Digital wellbeing, use the tag next to an app to count its screen
+  time toward an activity. The assignment applies to screen time on this desktop, including
+  existing recordings. The activity report gives manually timed spans priority when they overlap.
 - **Storage.** One JSON-lines file per local date in `~/.local/share/Claritard/usage/days/`, holding
   app segments and the spans when tracking was running (the page uses those to tell "away" from
   "not tracked"). Segments are cut every 60 s, so a crash loses at most a minute. Settings are in

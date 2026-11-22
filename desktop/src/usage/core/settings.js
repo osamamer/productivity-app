@@ -18,15 +18,24 @@ function readUsageSettings(file) {
     }
     return {
         enabled: typeof parsed?.enabled === 'boolean' ? parsed.enabled : DEFAULTS.enabled,
+        ...(parsed?.activityByApp && { activityByApp: activityAssignments(parsed.activityByApp) }),
         recordTitles: typeof parsed?.recordTitles === 'boolean' ? parsed.recordTitles : DEFAULTS.recordTitles,
     };
+}
+
+function activityAssignments(input) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined;
+    return Object.fromEntries(Object.entries(input).filter(([appId, activityId]) =>
+        appId.length > 0 && appId.length <= 512
+        && typeof activityId === 'string' && activityId.length > 0 && activityId.length <= 128,
+    ));
 }
 
 function writeUsageSettings(file, settings) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const temporary = `${file}.tmp`;
-    fs.writeFileSync(temporary, `${JSON.stringify({ enabled: Boolean(settings.enabled), recordTitles: Boolean(settings.recordTitles) }, null, 2)}\n`);
+    fs.writeFileSync(temporary, `${JSON.stringify({ enabled: Boolean(settings.enabled), recordTitles: Boolean(settings.recordTitles), activityByApp: activityAssignments(settings.activityByApp) }, null, 2)}\n`);
     fs.renameSync(temporary, file);
 }
 
-module.exports = { readUsageSettings, writeUsageSettings };
+module.exports = { activityAssignments, readUsageSettings, writeUsageSettings };

@@ -124,6 +124,23 @@ object UsageTracker {
     private fun sessionLeftMs(u: AppUsage, rule: AppRule, now: Long): Long =
         if (rule.sessionMin == 0) Long.MAX_VALUE else rule.sessionMin * 60_000L - (now - u.sessionStartedAt)
 
+    /** Wall-clock deadlines keep counting in the background; daily budgets count only in front. */
+    @Synchronized
+    fun countdowns(context: Context, now: Long, foreground: String?, rules: Map<String, AppRule>): Map<String, Long> {
+        ensureLoaded(context, now)
+        val calendar = Calendar.getInstance().apply { timeInMillis = now }
+        return buildMap {
+            for ((pkg, usage) in apps) {
+                val rule = rules[pkg] ?: continue
+                if (!usage.sessionActive || !rule.limitsInForceAt(calendar)) continue
+                val dailyLeft = if (pkg == foreground && rule.dailyLimitMin > 0)
+                    rule.dailyLimitMin * 60_000L - usage.usedMs else Long.MAX_VALUE
+                val left = minOf(sessionLeftMs(usage, rule, now), dailyLeft)
+                if (left > 0 && left < Long.MAX_VALUE) put(pkg, now + left)
+            }
+        }
+    }
+
     private fun isUnlocked(u: AppUsage, rule: AppRule, now: Long): Boolean =
         u.sessionActive && sessionLeftMs(u, rule, now) > 0
 

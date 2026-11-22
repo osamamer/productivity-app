@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const { timeoutPaths } = require('./core/paths');
 const { loadConfig } = require('./core/config');
 const { normalizeUrl } = require('./core/urls');
-const { grantBrowserRule, browserRulesResponse } = require('./core/browserSession');
+const { grantBrowserRule, browserRulesResponse, recordTabPresence } = require('./core/browserSession');
 const { scheduleCommand, runDetached } = require('./core/systemd');
 const { watchFile } = require('./core/fileWatch');
 
@@ -65,6 +65,7 @@ async function startSessionEnforcement(paths, session) {
 
 async function handle(request) {
     const paths = timeoutPaths();
+    if (request?.type === 'tabs') return { ok: recordTabPresence(paths, request) };
     const config = loadConfig(paths.configFile);
     if (request?.type === 'rules') return browserRulesResponse(config, paths);
     if (request?.type === 'grant') {
@@ -75,7 +76,7 @@ async function handle(request) {
         if (created) await startSessionEnforcement(paths, session);
         // A daily limit brought the deadline forward; the first timer would fire too late.
         if (shortened) await scheduleExpiry(paths, session, `claritard-browser-expire-${session.id}-${Math.round(session.deadline)}`);
-        return { ok: true, deadline: session.deadline };
+        return { ok: true, sessionId: session.id, deadline: session.deadline };
     }
     throw new Error('Unknown browser request.');
 }
@@ -95,9 +96,12 @@ function sendRules() {
 
 /** Stays alive until Firefox disconnects, which ends stdin. */
 function watchRules() {
-    const stop = watchFile(timeoutPaths().configFile, sendRules);
+    const paths = timeoutPaths();
+    const stopConfig = watchFile(paths.configFile, sendRules);
+    const stopSession = watchFile(paths.browserSessionFile, sendRules);
     process.stdin.on('end', () => {
-        stop();
+        stopConfig();
+        stopSession();
         process.exit(0);
     });
     sendRules();

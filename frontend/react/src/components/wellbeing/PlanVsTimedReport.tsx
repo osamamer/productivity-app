@@ -9,6 +9,7 @@ import { useRevalidatingResource } from '../../hooks/useRevalidatingResource';
 import { activitySessionService } from '../../services/api/activitySessionService';
 import { eventService } from '../../services/api/eventService';
 import { RevalidatingResource } from '../../services/cache/revalidatingResource';
+import { desktopUsage, type ClassifiedScreenSpan } from '../../services/desktop';
 import { getAuthCacheScope } from '../../services/utils/authHeaders';
 import { Activity } from '../../types/Activity';
 import { ActivitySession } from '../../types/ActivitySession';
@@ -17,12 +18,13 @@ import { activityHex } from '../activity/activityColors';
 import { expandCalendarEvent } from '../calendar/recurrence';
 import { formatScreenDuration } from '../day/screenTimeText';
 import { ComparisonBars } from './ComparisonBars';
-import { compareByActivity, compareByBucket, timedSpan, type ActivityComparison, type Span } from './planVsTimed';
+import { addClassifiedScreenTime, compareByActivity, compareByBucket, timedSpan, type ActivityComparison, type Span } from './planVsTimed';
 import { reportWindow, type ReportPeriod } from './screenTimeReport';
 import { StatTile } from './StatTile';
 
 const KEEP_MS = 24 * 60 * 60 * 1000;
 const eventsResource = new RevalidatingResource<CalendarEvent[]>({ keepMs: KEEP_MS, maxEntries: 2 });
+const classifiedScreenResource = new RevalidatingResource<ClassifiedScreenSpan[]>({ keepMs: KEEP_MS, maxEntries: 8 });
 const sessionsResource = new RevalidatingResource<ActivitySession[]>({ keepMs: KEEP_MS, maxEntries: 8 });
 
 function plannedSpans(events: CalendarEvent[], from: Date, to: Date): Span[] {
@@ -57,7 +59,7 @@ function ActivityRow({ row, activity, scaleMs }: { row: ActivityComparison; acti
 }
 
 /** How much time chunks set aside for each activity, beside how much was actually timed. */
-export function PlanVsTimedReport({ period }: { period: ReportPeriod }) {
+export function PlanVsTimedReport({ period, activityByApp }: { period: ReportPeriod; activityByApp?: Record<string, string> }) {
     // Moves "now" on each minute, so today's plans count as their time comes.
     const now = useNow(true, 60_000);
     const window = reportWindow(period, new Date(now));
@@ -73,11 +75,26 @@ export function PlanVsTimedReport({ period }: { period: ReportPeriod }) {
         { freshMs: 0, keepPrevious: true },
     );
 
+    const assignmentKey = activityByApp && Object.keys(activityByApp).length
+        ? JSON.stringify(activityByApp)
+        : null;
+    const getActivityTime = desktopUsage?.getActivityTime;
+    const classified = useRevalidatingResource(
+        classifiedScreenResource,
+        getActivityTime && assignmentKey ? `${scope}:${from}:${to}:${assignmentKey}` : null,
+        () => getActivityTime?.(from, to) ?? Promise.resolve([]),
+        { freshMs: 0, refreshEveryMs: 60_000 },
+    );
+
     const report = useMemo(() => {
         if (!events.data || !sessions.data) return null;
         const windowDates = { from: new Date(from), to: new Date(to) };
         const planned = plannedSpans(events.data, windowDates.from, windowDates.to);
-        const timed = sessions.data.map(session => timedSpan(session, now));
+        const knownActivities = new Set(activities?.map(activity => activity.id));
+        const timed = addClassifiedScreenTime(
+            sessions.data.map(session => timedSpan(session, now)),
+            (assignmentKey ? classified.data ?? [] : []).filter(span => knownActivities.has(span.activityId)),
+        );
         const rows = compareByActivity(planned, timed, windowDates, now);
         return {
             rows,
@@ -86,10 +103,10 @@ export function PlanVsTimedReport({ period }: { period: ReportPeriod }) {
             timedMs: rows.reduce((total, row) => total + row.timedMs, 0),
             scaleMs: Math.max(1, ...rows.flatMap(row => [row.plannedMs, row.timedMs])),
         };
-    }, [events.data, sessions.data, from, to, period, now]);
+    }, [events.data, sessions.data, from, to, period, now, activities, assignmentKey, classified.data]);
 
     const byId = new Map((activities ?? []).map(activity => [activity.id, activity]));
-    const error = events.error ?? sessions.error;
+    const error = events.error ?? sessions.error ?? (classified.error ? 'Could not load classified screen time.' : null);
 
     return (
         <Stack spacing={2}>

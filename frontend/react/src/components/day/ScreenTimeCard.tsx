@@ -22,7 +22,7 @@ interface ScreenTimeCardProps {
 export function ScreenTimeCard({ overview, windowStart, windowEnd }: ScreenTimeCardProps) {
     const start = windowStart.getTime();
     const end = windowEnd.getTime();
-    const { available, status, range, error, saveSettings } = useScreenTime({ start, end });
+    const { available, status, range, error, saveSettings, assignActivity } = useScreenTime({ start, end });
     const activities = useActivities();
 
     const layout = useMemo(() => {
@@ -66,7 +66,8 @@ export function ScreenTimeCard({ overview, windowStart, windowEnd }: ScreenTimeC
                     <Divider />
                     <Box sx={{ textAlign: 'left' }}>
                         <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>Where the day went</Typography>
-                        <ScreenTimeSummary appTimes={layout.screen.appTimes} apps={range?.apps ?? {}} />
+                        <ScreenTimeSummary appTimes={layout.screen.appTimes} apps={range?.apps ?? {}} activities={activities ?? []}
+                            activityByApp={status.settings.activityByApp} assignActivity={assignActivity} />
                     </Box>
                 </Stack>
             )}

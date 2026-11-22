@@ -123,7 +123,12 @@ export interface UsageRange {
     tracked: UsageInterval[];
 }
 
+export interface ClassifiedScreenSpan extends UsageInterval {
+    activityId: string;
+}
+
 export interface UsageSettings {
+    activityByApp?: Record<string, string>;
     enabled: boolean;
     recordTitles: boolean;
     startAtLogin: boolean;
@@ -156,6 +161,8 @@ export interface DesktopUsage {
     getRange: (fromMs: number, toMs: number) => Promise<UsageRange>;
     // Absent in desktop builds that predate the screen-time report. Covers up to about a year.
     getDailyTotals?: (fromMs: number, toMs: number) => Promise<UsageDailyTotals>;
+    assignActivity?: (appId: string, activityId: string | null) => Promise<UsageStatus>;
+    getActivityTime?: (fromMs: number, toMs: number) => Promise<ClassifiedScreenSpan[]>;
     saveSettings: (settings: UsageSettings) => Promise<UsageStatus>;
 }
 

@@ -34,8 +34,10 @@ Autolinked as a local Expo module; there is no iOS or web implementation (`Bound
   sideloaded apps. Shizuku's server must be restarted after every reboot on unrooted phones.
 - `BoundariesAdminReceiver` (device admin) and the service's uninstall guard add friction to
   uninstalling Claritard. Neither is a guarantee: ADB, safe mode or a factory reset still work.
-- `BoundariesPackage` starts the status notification service and Shizuku listeners when the app
-  process starts, once passwords are set; `BoundariesBootReceiver` does the same after a reboot.
+- The accessibility service posts countdown notifications for apps with an active limit. Android
+  renders the countdown in the notification shade. Per-open limits continue in the background,
+  while daily usage only counts in the foreground. Boot and resume receivers restore the alarms
+  independently of notification permission.
 
 Android will not let an app enable its own accessibility service; the user turns it on once in
 Settings. Google Play restricts accessibility-based blockers, so this suits sideloaded builds.

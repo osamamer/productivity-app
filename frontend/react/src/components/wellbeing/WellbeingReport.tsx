@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Divider, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import { desktopUsage } from '../../services/desktop';
+import { useScreenTime } from '../day/useScreenTime';
 import { PlanVsTimedReport } from './PlanVsTimedReport';
 import { ScreenTimeReport } from './ScreenTimeReport';
 import { REPORT_PERIODS, type ReportPeriod } from './screenTimeReport';
@@ -8,6 +9,7 @@ import { REPORT_PERIODS, type ReportPeriod } from './screenTimeReport';
 /** The report tab: one period for planned-and-timed and, on the desktop, screen time. */
 export function WellbeingReport() {
     const [period, setPeriod] = useState<ReportPeriod>('week');
+    const screen = useScreenTime();
     const description = REPORT_PERIODS.find(option => option.value === period)?.description;
 
     return (
@@ -22,11 +24,11 @@ export function WellbeingReport() {
                     ))}
                 </ToggleButtonGroup>
             </Stack>
-            <PlanVsTimedReport period={period} />
+            <PlanVsTimedReport period={period} activityByApp={screen.status?.settings.activityByApp} />
             {desktopUsage && (
                 <>
                     <Divider />
-                    <ScreenTimeReport period={period} />
+                    <ScreenTimeReport period={period} screen={screen} />
                 </>
             )}
         </Stack>

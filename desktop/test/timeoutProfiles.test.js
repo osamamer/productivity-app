@@ -64,3 +64,44 @@ test('an ended Firefox timer closes Firefox started with any --profile', async t
     assert.equal(processStamp(firefox.pid), null, 'Firefox is still running');
     assert.equal(fs.existsSync(paths.browserSessionFile), false);
 });
+
+test('the Firefox popup follows a timed tab while expiry keeps the original deadline', async t => {
+    const { BrowserSessionMonitor } = require('../src/timeouts/sessionMonitors');
+    const { recordTabPresence, readSession } = require('../src/timeouts/core/browserSession');
+    const { timeoutPaths } = require('../src/timeouts/core/paths');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claritard-timed-tab-'));
+    const script = path.join(dir, 'firefox.js');
+    fs.writeFileSync(script, 'setInterval(() => {}, 1000);');
+    const firefox = spawn(process.execPath, [script], { stdio: 'ignore' });
+    t.after(() => {
+        firefox.kill('SIGKILL');
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    const paths = timeoutPaths({ HOME: dir, XDG_DATA_HOME: path.join(dir, 'data') });
+    fs.mkdirSync(path.dirname(paths.browserSessionFile), { recursive: true });
+    const deadline = Date.now() / 1000 + 60;
+    fs.writeFileSync(paths.browserSessionFile, JSON.stringify({
+        id: 'timed', deadline, rules: [], target: { executable: fs.realpathSync(process.execPath), script },
+    }));
+    const actions = [];
+    const monitor = new BrowserSessionMonitor({
+        paths,
+        popups: { show: (_, options) => actions.push(options.deadline), close: () => actions.push('hidden') },
+        notify() {}, appearance() {}, onChange() {},
+    });
+    const report = hasTimedTab => recordTabPresence(paths, {
+        sessionId: 'timed', profileId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', hasTimedTab,
+    });
+
+    report(true);
+    monitor.check();
+    report(false);
+    monitor.check();
+    report(true);
+    monitor.check();
+
+    assert.deepEqual(actions, [deadline * 1000, 'hidden', deadline * 1000]);
+    assert.equal(readSession(paths).deadline, deadline);
+});

@@ -19,6 +19,7 @@ function timeoutPaths(env = process.env) {
         originalsDir: path.join(stateDir, 'originals'),
         appSessionsDir: path.join(stateDir, 'app-sessions'),
         browserSessionFile: path.join(stateDir, 'browser-session.json'),
+        browserTabsFile: path.join(stateDir, 'browser-tabs.json'),
         browserLockFile: path.join(stateDir, 'browser-session.lock'),
         dailyUsageFile: path.join(stateDir, 'daily-usage.json'),
         dailyUsageLockFile: path.join(stateDir, 'daily-usage.lock'),

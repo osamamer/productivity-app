@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { compareByActivity, compareByBucket, timedSpan } from '../src/components/wellbeing/planVsTimed.ts';
+import { addClassifiedScreenTime, compareByActivity, compareByBucket, timedSpan } from '../src/components/wellbeing/planVsTimed.ts';
 import { reportWindow } from '../src/components/wellbeing/screenTimeReport.ts';
 
 const H = 3_600_000;
@@ -39,4 +39,14 @@ test('a timer covers its counted time from its start, leaving pauses out', () =>
     endedAt: new Date(at(18, 12)).toISOString(), pausedAt: null, pausedMillis: H, targetEndAt: null, elapsedSeconds: 0, active: false, paused: false };
   const timed = timedSpan(session, now);
   assert.equal(timed.end - timed.start, 2 * H);
+});
+
+test('classified screen use adds only the portions outside recorded timers', () => {
+  const timed = [{ activityId: 'TV', start: 20, end: 40 }, { activityId: 'Reading', start: 35, end: 60 }];
+  const screen = [{ activityId: 'TV', start: 0, end: 80 }];
+  assert.deepEqual(addClassifiedScreenTime(timed, screen), [
+    ...timed,
+    { activityId: 'TV', start: 0, end: 20 },
+    { activityId: 'TV', start: 60, end: 80 },
+  ]);
 });

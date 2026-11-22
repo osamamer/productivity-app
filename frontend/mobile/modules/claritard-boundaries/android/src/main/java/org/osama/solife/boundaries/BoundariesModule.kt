@@ -68,7 +68,6 @@ class BoundariesModule : Module() {
             requireLength(masterPw)
             if (unlockPw == masterPw) throw BoundariesException("SAME_PASSWORD", "The two passwords must be different")
             BoundariesPrefs.setPasswords(context, unlockPw, masterPw)
-            BoundariesForegroundService.start(context)
             true
         }
 
@@ -126,29 +125,28 @@ class BoundariesModule : Module() {
             val until = System.currentTimeMillis() + BoundariesPrefs.PAUSE_DURATION_MS
             BoundariesPrefs.setIndefinitelyDisabled(context, false)
             BoundariesPrefs.setPausedUntil(context, until)
-            BoundariesForegroundService.scheduleResume(context, until)
-            BoundariesForegroundService.refreshNotification(context)
+            BoundaryResumeAlarm.scheduleResume(context, until)
+            BoundaryCountdownNotification.clear(context)
             until.toDouble()
         }
 
         AsyncFunction("disableWithMasterPassword") { masterPw: String ->
             if (!BoundariesPrefs.verifyMasterPassword(context, masterPw)) throw BoundariesException("BAD_PASSWORD", "Master password incorrect")
-            BoundariesForegroundService.cancelResume(context)
+            BoundaryResumeAlarm.cancelResume(context)
             BoundariesPrefs.setPausedUntil(context, 0L)
             BoundariesPrefs.setIndefinitelyDisabled(context, true)
-            BoundariesForegroundService.refreshNotification(context)
+            BoundaryCountdownNotification.clear(context)
             true
         }
 
         AsyncFunction("enable") {
-            BoundariesForegroundService.cancelResume(context)
+            BoundaryResumeAlarm.cancelResume(context)
             BoundariesPrefs.setIndefinitelyDisabled(context, false)
             BoundariesPrefs.setPausedUntil(context, 0L)
             SessionExpiryScheduler.scheduleNext(
                 context,
                 UsageTracker.nextTimedSessionExpiry(context, System.currentTimeMillis(), BoundariesPrefs.getRules(context)),
             )
-            BoundariesForegroundService.refreshNotification(context)
             true
         }
 
@@ -191,7 +189,6 @@ class BoundariesModule : Module() {
 
         // ---- Misc ----
 
-        AsyncFunction("startEnforcementService") { BoundariesForegroundService.start(context) }
 
         /** {surface, text, accent} as #RRGGBB, used for the messages the service draws. */
         AsyncFunction("setAppearance") { json: String -> BoundaryAppearance.save(context, json) }

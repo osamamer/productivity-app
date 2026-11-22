@@ -51,11 +51,25 @@ export function useScreenTime(window?: { start: number; end: number }) {
         }
     }, []);
 
+    const assignActivity = useCallback(async (appId: string, activityId: string | null) => {
+        if (!desktopUsage?.assignActivity) return;
+        setSaveError(null);
+        try {
+            const next = await desktopUsage.assignActivity(appId, activityId);
+            screenStatusResource.set(SCREEN_STATUS_KEY, next);
+            setSavedStatus(next);
+        } catch (error) {
+            console.error('Could not classify screen time:', error);
+            setSaveError('Could not save the activity assignment.');
+        }
+    }, []);
+
     return {
         available: Boolean(desktopUsage),
         status: currentStatus,
         range: range.data,
         error: saveError ?? range.error ?? status.error,
         saveSettings,
+        assignActivity: desktopUsage?.assignActivity ? assignActivity : undefined,
     };
 }

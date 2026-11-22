@@ -4,17 +4,16 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 
-/** Restarts the foreground service after a reboot, and re-arms any pending resume alarm. */
+/** Restores pending enforcement alarms after reboot. */
 class BoundariesBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         if (!BoundariesPrefs.hasPasswordsSet(context)) return
 
-        BoundariesForegroundService.start(context)
 
         val pausedUntil = BoundariesPrefs.getPausedUntil(context)
         if (pausedUntil > System.currentTimeMillis()) {
-            BoundariesForegroundService.scheduleResume(context, pausedUntil)
+            BoundaryResumeAlarm.scheduleResume(context, pausedUntil)
         }
         SessionExpiryScheduler.scheduleNext(
             context,

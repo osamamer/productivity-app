@@ -30,6 +30,31 @@ export function timedSpan(session: ActivitySession, now: number): Span {
     return { activityId: session.activityId, start, end: start + sessionElapsedMs(session, now) };
 }
 
+/** A timer takes precedence for any time already recorded manually. */
+export function addClassifiedScreenTime(timed: Span[], screen: Span[]): Span[] {
+    const occupied: Span[] = [];
+    for (const span of [...timed].sort((a, b) => a.start - b.start)) {
+        const last = occupied[occupied.length - 1];
+        if (last && span.start <= last.end) last.end = Math.max(last.end, span.end);
+        else occupied.push({ ...span });
+    }
+
+    let firstOverlap = 0;
+    const additions: Span[] = [];
+    for (const span of [...screen].sort((a, b) => a.start - b.start)) {
+        let start = span.start;
+        while (occupied[firstOverlap]?.end <= start) firstOverlap++;
+        for (let i = firstOverlap; i < occupied.length && occupied[i].start < span.end; i++) {
+            const timer = occupied[i];
+            if (timer.start > start) additions.push({ ...span, start, end: timer.start });
+            start = Math.max(start, timer.end);
+            if (start >= span.end) break;
+        }
+        if (start < span.end) additions.push({ ...span, start });
+    }
+    return [...timed, ...additions];
+}
+
 function overlap(span: Span, from: number, to: number): number {
     return Math.max(0, Math.min(span.end, to) - Math.max(span.start, from));
 }

@@ -1,8 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Lists launchable apps so the user can pick which ones get a boundary. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
@@ -22,15 +20,6 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/boundaries_accessibility_service" />
-        </service>
-
-        <service
-            android:name="org.osama.solife.boundaries.BoundariesForegroundService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Personal app limits: keeps a background monitor running to enforce app restrictions the user configured for themselves." />
         </service>
 
         <receiver

@@ -89,6 +89,7 @@ class BoundariesAccessibilityService : AccessibilityService() {
         if (!BoundariesPrefs.isEnforcementActive(applicationContext)) {
             currentFg = null
             delayOverlay.forget()
+            BoundaryCountdownNotification.clear(applicationContext)
             return
         }
 
@@ -123,23 +124,26 @@ class BoundariesAccessibilityService : AccessibilityService() {
         if (!BoundariesPrefs.isEnforcementActive(ctx)) {
             currentFg = null
             delayOverlay.forget()
+            BoundaryCountdownNotification.clear(ctx)
             return
         }
         val usable = isScreenUsable()
         if (screenUsable && !usable) UsageTracker.relockAll(ctx, now, BoundariesPrefs.getRules(ctx))
         screenUsable = usable
         val rules = BoundariesPrefs.getRules(ctx)
-        if (rules.isEmpty()) return
+        if (rules.isEmpty()) {
+            BoundaryCountdownNotification.clear(ctx)
+            return
+        }
         stopExpiredTimedApps(now, usable, rules)
 
         val fg = if (usable) resolveForegroundSteady() else null
         if (fg != currentFg) {
             onForegroundChanged(fg, now)
-            return
+        } else if (fg != null) {
+            rules[fg]?.let { handleVerdict(fg, UsageTracker.onTick(ctx, it, now, delta, labelFor(fg))) }
         }
-        val pkg = fg ?: return
-        val rule = rules[pkg] ?: return
-        handleVerdict(pkg, UsageTracker.onTick(ctx, rule, now, delta, labelFor(pkg)))
+        BoundaryCountdownNotification.update(ctx, UsageTracker.countdowns(ctx, now, currentFg, rules), ::labelFor)
     }
 
     private fun stopExpiredTimedApps(now: Long, usable: Boolean, rules: Map<String, AppRule>) {
@@ -302,6 +306,7 @@ class BoundariesAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         handler.removeCallbacks(ticker)
+        BoundaryCountdownNotification.clear(applicationContext)
         delayOverlay.forget()
         super.onDestroy()
     }

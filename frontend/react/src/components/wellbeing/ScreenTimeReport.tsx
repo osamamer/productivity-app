@@ -6,7 +6,8 @@ import { screenTotalsResource, TOTALS_FRESH_MS } from '../../services/cache/scre
 import { formatScreenDuration } from '../day/screenTimeText';
 import { ScreenTimeSetup } from '../day/ScreenTimeSetup';
 import { ScreenTimeSummary } from '../day/ScreenTimeSummary';
-import { useScreenTime } from '../day/useScreenTime';
+import { useActivities } from '../../hooks/useActivities';
+import type { useScreenTime } from '../day/useScreenTime';
 import { ReportBars } from './ReportBars';
 import { StatTile } from './StatTile';
 import { bucketDays, bucketUnit, reportAppTimes, reportSummary, reportWindow, type ReportPeriod } from './screenTimeReport';
@@ -33,8 +34,9 @@ function useDailyTotals(period: ReportPeriod, enabled: boolean) {
 }
 
 /** Screen time over the last week to year: totals, a bar per day/week/month and the apps it went to. */
-export function ScreenTimeReport({ period }: { period: ReportPeriod }) {
-    const { status, error: statusError, saveSettings } = useScreenTime();
+export function ScreenTimeReport({ period, screen }: { period: ReportPeriod; screen: ReturnType<typeof useScreenTime> }) {
+    const { status, error: statusError, saveSettings, assignActivity } = screen;
+    const activities = useActivities();
     const enabled = Boolean(status?.settings.enabled);
     const { window, totals, previous, error } = useDailyTotals(period, enabled);
 
@@ -84,7 +86,8 @@ export function ScreenTimeReport({ period }: { period: ReportPeriod }) {
 
                     <Card variant="outlined" sx={{ p: { xs: 1.5, sm: 2 } }}>
                         <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5 }}>Where the time went</Typography>
-                        <Box><ScreenTimeSummary appTimes={report.appTimes} apps={totals?.apps ?? {}} /></Box>
+                        <Box><ScreenTimeSummary appTimes={report.appTimes} apps={totals?.apps ?? {}} activities={activities ?? []}
+                            activityByApp={status.settings.activityByApp} assignActivity={assignActivity} /></Box>
                     </Card>
                 </Stack>
             )}

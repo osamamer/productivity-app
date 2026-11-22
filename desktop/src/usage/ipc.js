@@ -9,6 +9,8 @@ function registerUsageIpc({ usage, isMainAppPage }) {
         getStatus: () => usage.getStatus(),
         getRange: (from, to) => usage.getRange(Number(from), Number(to)),
         getDailyTotals: (from, to) => usage.getDailyTotals(Number(from), Number(to)),
+        assignActivity: (appId, activityId) => usage.assignActivity(appId, activityId),
+        getActivityTime: (from, to) => usage.getActivityTime(Number(from), Number(to)),
         saveSettings: settings => usage.saveSettings(settings),
     };
     for (const [name, handler] of Object.entries(handlers)) {

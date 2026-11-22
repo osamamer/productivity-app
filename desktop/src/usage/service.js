@@ -2,7 +2,7 @@ const { powerMonitor } = require('electron');
 const { usagePaths } = require('./core/paths');
 const { UsageStore } = require('./core/store');
 const { INITIAL_STATE, reduce } = require('./core/tracker');
-const { readUsageSettings, writeUsageSettings } = require('./core/settings');
+const { activityAssignments, readUsageSettings, writeUsageSettings } = require('./core/settings');
 const { isAutostartEnabled, setAutostart } = require('./core/autostart');
 const { describeApp } = require('./core/apps');
 const { mergeIntervals, dropBriefVisits, dailyAppTotals } = require('./core/segments');
@@ -212,6 +212,7 @@ class UsageService {
             enabled: Boolean(input?.enabled),
             recordTitles: Boolean(input?.recordTitles),
             startAtLogin: Boolean(input?.startAtLogin),
+            activityByApp: this.settings().activityByApp,
         };
         writeUsageSettings(this.paths.settingsFile, settings);
         setAutostart(this.paths.autostartFile, settings.startAtLogin, this.command);
@@ -224,6 +225,34 @@ class UsageService {
             this.unsupportedReason = null;
         }
         return this.getStatus();
+    }
+
+    assignActivity(appId, activityId) {
+        const settings = this.settings();
+        const assignments = new Map(Object.entries(settings.activityByApp ?? {}));
+        if (typeof appId !== 'string' || !appId || appId.length > 512) throw new Error('Invalid app.');
+        if (activityId === null) {
+            assignments.delete(appId);
+        } else {
+            if (typeof activityId !== 'string' || !activityId || activityId.length > 128) throw new Error('Invalid activity.');
+            assignments.set(appId, activityId);
+        }
+        writeUsageSettings(this.paths.settingsFile, {
+            ...settings,
+            activityByApp: activityAssignments(Object.fromEntries(assignments)),
+        });
+        return this.getStatus();
+    }
+
+    getActivityTime(from, to) {
+        assertRange(from, to, MAX_TOTALS_RANGE_MS);
+        const assignment = new Map(Object.entries(this.settings().activityByApp ?? {}));
+        if (!assignment.size) return [];
+        const spans = this.readVisits(from, to).visits.flatMap(({ appId, start, end }) => {
+            const activityId = assignment.get(appId);
+            return activityId ? [{ start, end, activityId }] : [];
+        });
+        return mergeIntervals(spans, (first, second) => first.activityId === second.activityId);
     }
 
     /** Segments and tracked spans in [from, to), including what is happening right now. */

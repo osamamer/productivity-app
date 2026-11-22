@@ -41,7 +41,6 @@ class SessionExpiryReceiver : BroadcastReceiver() {
         SessionExpiryScheduler.scheduleNext(context, UsageTracker.nextTimedSessionExpiry(context, now, rules))
         if (expired.isEmpty()) return
 
-        BoundariesForegroundService.start(context)
         ShizukuBridge.initialize(context)
         for (pkg in expired) {
             try {

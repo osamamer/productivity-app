@@ -8,7 +8,7 @@ const { timeoutPaths } = require('../src/timeouts/core/paths');
 const { appSettings, urlSettings, saveConfig, emptyConfig } = require('../src/timeouts/core/config');
 const { readDailyUsage, addDailyUsage } = require('../src/timeouts/core/dailyUsage');
 const { appUsageToday, entryProgram } = require('../src/timeouts/core/appDailyLimits');
-const { grantBrowserRule, expireBrowser, readSession, urlSecondsToday } = require('../src/timeouts/core/browserSession');
+const { grantBrowserRule, expireBrowser, readSession, urlSecondsToday, recordTabPresence, hasTimedBrowserTab } = require('../src/timeouts/core/browserSession');
 const { DailyLimitMonitor } = require('../src/timeouts/dailyLimitMonitor');
 
 const URL = 'https://youtube.com/';
@@ -162,4 +162,26 @@ test('a running app with a daily limit has its time counted and keeps Claritard 
     } finally {
         child.kill('SIGKILL');
     }
+});
+
+test('closing timed Firefox tabs hides the countdown without changing the session deadline', t => {
+    const { root, paths } = tempPaths();
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    fakeFirefox(paths);
+    const { session } = grantBrowserRule(paths, URL, siteRule);
+    const profileId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    const secondProfile = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    const report = (id, hasTimedTab) => recordTabPresence(paths, { sessionId: session.id, profileId: id, hasTimedTab });
+
+    assert.equal(hasTimedBrowserTab(paths, session.id), true);
+    report(profileId, false);
+    assert.equal(hasTimedBrowserTab(paths, session.id), false);
+    report(secondProfile, true);
+    assert.equal(hasTimedBrowserTab(paths, session.id), true);
+    report(secondProfile, false);
+    assert.equal(hasTimedBrowserTab(paths, session.id), false);
+    report(profileId, true);
+    assert.equal(hasTimedBrowserTab(paths, session.id), true);
+    assert.equal(hasTimedBrowserTab(paths, session.id, Date.now() + 21_000), false);
+    assert.equal(readSession(paths).deadline, session.deadline);
 });

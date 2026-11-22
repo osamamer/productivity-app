@@ -6,6 +6,44 @@ const HOST = "claritard_url_gate";
 let rules = [];
 let appearance = null;
 const allowed = new Map();
+const profileId = crypto.randomUUID();
+let sessionId = null;
+let presenceTimer;
+let reporting = false;
+let needsReport = false;
+
+function scheduleTabReport() {
+  clearTimeout(presenceTimer);
+  presenceTimer = setTimeout(() => void reportTabs(), 150);
+}
+
+async function reportTabs() {
+  if (reporting) {
+    needsReport = true;
+    return;
+  }
+  if (!sessionId || !Array.from(allowed.values()).some(end => end > Date.now())) return;
+  const reportedSessionId = sessionId;
+  reporting = true;
+  try {
+    const tabs = await browser.tabs.query({});
+    const hasTimedTab = tabs.some(tab => (allowed.get(matchingRule(tab.url)?.url) || 0) > Date.now());
+    if (sessionId === reportedSessionId) await native({type: "tabs", sessionId, profileId, hasTimedTab});
+  } catch (error) {
+    console.error("Could not report timed tabs:", error);
+  } finally {
+    reporting = false;
+    if (needsReport) {
+      needsReport = false;
+      scheduleTabReport();
+    }
+  }
+}
+
+browser.tabs.onCreated.addListener(scheduleTabReport);
+browser.tabs.onRemoved.addListener(scheduleTabReport);
+browser.tabs.onUpdated.addListener((_tabId, change) => { if (change.url) scheduleTabReport(); });
+setInterval(() => void reportTabs(), 5000);
 
 function matchingRule(address) {
   let page;
@@ -36,10 +74,12 @@ function applyRules(state) {
     console.error("Claritard native host:", state.error);
     return;
   }
+  sessionId = state.sessionId ?? null;
   rules = state.rules;
   appearance = state.appearance;
   allowed.clear();
   for (const rule of state.unlocked || []) allowed.set(rule, state.deadline * 1000);
+  scheduleTabReport();
 }
 
 // The host pushes fresh rules whenever Claritard saves its settings. If it is missing or exits,
@@ -108,7 +148,9 @@ browser.runtime.onMessage.addListener(async request => {
     if (!rule) return {error: "This timer was removed in Claritard."};
     try {
       const answer = await native({type: "grant", url: rule.url});
+      sessionId = answer.sessionId ?? null;
       allowed.set(rule.url, answer.deadline * 1000);
+      scheduleTabReport();
       browser.runtime.sendMessage({type: "unlocked", rule: rule.url}).catch(() => {});
       return {ok: true};
     } catch (error) {

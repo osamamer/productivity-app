@@ -137,3 +137,9 @@ test('daily totals split time spent across midnight between the two days', () =>
     const days = dailyAppTotals([{ start: local(17, 23, 30), end: local(18, 0, 45), appId: 'mpv', title: null }]);
     assert.deepEqual(days.map(day => [day.date, day.totalMs]), [['2026-11-17', 30 * 60_000], ['2026-11-18', 45 * 60_000]]);
 });
+
+test('screen-time activity assignments survive reading settings after a restart', () => {
+    const file = path.join(temporaryDir(), 'usage.json');
+    writeUsageSettings(file, { enabled: true, recordTitles: false, activityByApp: { plex: 'tv', invalid: 4 } });
+    assert.deepEqual(readUsageSettings(file).activityByApp, { plex: 'tv' });
+});

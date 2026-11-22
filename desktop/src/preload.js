@@ -34,6 +34,8 @@ function usageBridge() {
         getStatus: call('getStatus'),
         getRange: call('getRange'),
         getDailyTotals: call('getDailyTotals'),
+        assignActivity: call('assignActivity'),
+        getActivityTime: call('getActivityTime'),
         saveSettings: call('saveSettings'),
     };
 }

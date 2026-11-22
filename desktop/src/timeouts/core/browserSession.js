@@ -113,6 +113,39 @@ function grantBrowserRule(paths, url, rule) {
     });
 }
 
+const TAB_PRESENCE_TTL_MS = 20_000;
+
+function readTabPresence(paths, sessionId) {
+    try {
+        const data = JSON.parse(fs.readFileSync(paths.browserTabsFile, 'utf8'));
+        return data.sessionId === sessionId ? data.profiles : null;
+    } catch (error) {
+        if (error.code !== 'ENOENT') console.error('Could not read timed tab presence:', error);
+        return null;
+    }
+}
+
+function recordTabPresence(paths, { sessionId, profileId, hasTimedTab }, now = Date.now()) {
+    if (typeof profileId !== 'string' || !/^[0-9a-f-]{36}$/.test(profileId)
+        || typeof hasTimedTab !== 'boolean') throw new Error('Invalid timed tab presence.');
+    return withFileLock(paths.browserLockFile, () => {
+        if (activeSession(paths)?.id !== sessionId || !sessionId) return false;
+        const profiles = Object.fromEntries(Object.entries(readTabPresence(paths, sessionId) ?? {})
+            .filter(([, entry]) => entry.expiresAt > now));
+        profiles[profileId] = { hasTimedTab, expiresAt: now + TAB_PRESENCE_TTL_MS };
+        const temporary = `${paths.browserTabsFile}.tmp`;
+        fs.writeFileSync(temporary, JSON.stringify({ sessionId, profiles }));
+        fs.renameSync(temporary, paths.browserTabsFile);
+        return true;
+    });
+}
+
+/** Old extensions send no presence information, so use Firefox process visibility for them. */
+function hasTimedBrowserTab(paths, sessionId, now = Date.now()) {
+    const profiles = readTabPresence(paths, sessionId);
+    return profiles === null || Object.values(profiles).some(entry => entry.hasTimedTab && entry.expiresAt > now);
+}
+
 /** Adds an ended session's time to each of its URLs' daily usage. */
 function recordSessionUsage(paths, session) {
     for (const url of session.rules) addDailyUsage(paths, 'urls', url, liveSecondsToday(session, url, session.deadline));
@@ -132,6 +165,7 @@ async function expireBrowser(paths, id) {
         if (current?.id !== id) return;
         recordSessionUsage(paths, current);
         fs.rmSync(paths.browserSessionFile, { force: true });
+        if (paths.browserTabsFile) fs.rmSync(paths.browserTabsFile, { force: true });
     });
     return true;
 }
@@ -152,6 +186,7 @@ function browserRulesResponse(config, paths) {
             usedToday: Math.round(urlSecondsToday(paths, url, current)),
             message: rule.message,
         })),
+        sessionId: session?.id ?? null,
         deadline: session ? session.deadline : 0,
         unlocked: session ? session.rules : [],
         appearance: config.appearance ?? null,
@@ -159,5 +194,5 @@ function browserRulesResponse(config, paths) {
 }
 
 module.exports = {
-    readSession, activeSession, grantBrowserRule, expireBrowser, browserRulesResponse, firefoxTarget, urlSecondsToday,
+    readSession, activeSession, grantBrowserRule, expireBrowser, browserRulesResponse, firefoxTarget, urlSecondsToday, recordTabPresence, hasTimedBrowserTab,
 };

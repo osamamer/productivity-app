@@ -4,7 +4,7 @@ const { runningProcesses, sameSession, endSession } = require('./core/processes'
 const {
     targetIdentity, saveAppSession, removeAppSession, listAppSessions, liveAppSession, expireAppSession,
 } = require('./core/appSessions');
-const { readSession, expireBrowser } = require('./core/browserSession');
+const { readSession, expireBrowser, hasTimedBrowserTab } = require('./core/browserSession');
 const { scheduleCommand, cancelUnit } = require('./core/systemd');
 
 const CHECK_MS = 1000;
@@ -218,27 +218,37 @@ class BrowserSessionMonitor {
         }
         if (!this.current) {
             const totalSeconds = Math.max(1, Math.round(session.deadline - (session.startedAt ?? Date.now() / 1000)));
-            // Keyed by deadline too: a closing popup lingers until its window is gone.
             this.current = {
                 id: session.id,
                 deadline: session.deadline,
-                key: `browser-${session.id}-${session.deadline}`,
+                key: null,
+                shown: false,
+                totalSeconds,
                 warnings: new Warnings({ name: 'Firefox', totalSeconds: Infinity, notify: this.notify }),
             };
+            this.onChange();
+        }
+        const visible = hasTimedBrowserTab(this.paths, session.id)
+            && runningProcesses({ ...session.target, anyProfile: true }).length > 0;
+        if (visible && !this.current.shown) {
+            // A popup may still be closing when a tab reopens.
+            this.current.key = `browser-${session.id}-${session.deadline}-${Date.now()}`;
             this.popups.show(this.current.key, {
                 name: 'Firefox',
                 deadline: session.deadline * 1000,
-                totalSeconds,
+                totalSeconds: this.current.totalSeconds,
                 appearance: this.appearance(),
             });
-            this.onChange();
+        } else if (!visible && this.current.shown) {
+            this.popups.close(this.current.key);
         }
-        this.current.warnings.check(remaining);
+        this.current.shown = visible;
+        if (visible) this.current.warnings.check(remaining);
     }
 
     stopShowing() {
         if (!this.current) return;
-        this.popups.close(this.current.key);
+        if (this.current.key) this.popups.close(this.current.key);
         this.current = null;
         this.onChange();
     }
