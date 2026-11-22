@@ -2,7 +2,7 @@ import { memo, type MouseEvent } from 'react';
 import { Box, Checkbox, Chip, IconButton, InputAdornment, MenuItem, Select, TextField, Tooltip, Typography } from '@mui/material';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded';
 import CheckBoxOutlinedIcon from '@mui/icons-material/CheckBoxOutlined';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import NotesRoundedIcon from '@mui/icons-material/NotesRounded';
@@ -26,7 +26,7 @@ interface NotesListProps {
     onToggleNoteSelection: (noteId: string) => void;
     onSelectAllVisible: () => void;
     onClearSelection: () => void;
-    onRequestBulkDelete: () => void;
+    onOpenBulkActions: (anchor: HTMLElement) => void;
     onNoteContextMenu: (note: Note, event: MouseEvent<HTMLElement>) => void;
 }
 
@@ -53,7 +53,7 @@ export const NotesList = memo(function NotesList({
     onToggleNoteSelection,
     onSelectAllVisible,
     onClearSelection,
-    onRequestBulkDelete,
+    onOpenBulkActions,
     onNoteContextMenu,
 }: NotesListProps) {
     const categoriesById = new Map(categories.map(category => [category.id, category]));
@@ -87,15 +87,14 @@ export const NotesList = memo(function NotesList({
                         <Typography variant="body2" sx={{ whiteSpace: 'nowrap', fontWeight: 650 }}>
                             {selectedNoteIds.length} selected
                         </Typography>
-                        <Tooltip title="Delete selected notes">
+                        <Tooltip title="Actions for selected notes">
                             <IconButton
                                 size="small"
-                                color="error"
                                 disabled={bulkActionLoading || selectedNoteIds.length === 0}
-                                onClick={onRequestBulkDelete}
-                                aria-label="Delete selected notes"
+                                onClick={event => onOpenBulkActions(event.currentTarget)}
+                                aria-label="Actions for selected notes"
                             >
-                                <DeleteOutlineRoundedIcon fontSize="small" />
+                                <MoreHorizRoundedIcon fontSize="small" />
                             </IconButton>
                         </Tooltip>
                         <Tooltip title="Close selection">

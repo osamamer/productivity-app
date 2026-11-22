@@ -30,7 +30,7 @@ export function CategoryDialog({ open, category, onClose, onSave }: CategoryDial
     }, [category, open]);
 
     async function handleSave() {
-        if (!name.trim()) return;
+        if (saving || !name.trim()) return;
         setSaving(true);
         setSaveError(false);
         const saved = await onSave(name.trim(), color);

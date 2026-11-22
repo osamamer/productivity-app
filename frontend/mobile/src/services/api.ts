@@ -321,6 +321,7 @@ export const api = {
     all: () => apiRequest<Note[]>('/api/v1/notes'),
     get: (id: string) => apiRequest<Note>(`/api/v1/notes/${id}`),
     categories: () => apiRequest<NoteCategory[]>('/api/v1/note-categories'),
+    createCategory: (name: string, color: string) => json<NoteCategory>('/api/v1/note-categories', 'POST', { name, color }),
     create: (categoryId: string | null = null) =>
       json<Note>('/api/v1/notes', 'POST', {
         title: '',

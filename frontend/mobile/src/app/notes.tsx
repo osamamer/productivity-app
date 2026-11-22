@@ -5,6 +5,8 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/ui/AppButton';
+import { AppInput } from '@/components/ui/AppInput';
+import { ModalSheet } from '@/components/ui/ModalSheet';
 import { AppPopup } from '@/components/ui/AppPopup';
 import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
@@ -53,6 +55,8 @@ export default function NotesScreen() {
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [moveCategoryPickerOpen, setMoveCategoryPickerOpen] = useState(false);
+  const [newCategoryOpen, setNewCategoryOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const hasFocusedRef = useRef(false);
   const longPressRef = useRef(false);
@@ -130,19 +134,39 @@ export default function NotesScreen() {
     setFilterMenuOpen(false);
   }
 
+  async function saveSelected(updates: Partial<Pick<Note, 'categoryId' | 'pinned'>>) {
+    const updated = await api.notes.bulkUpdate(selectedNoteIdsForActions, updates);
+    const updatedById = new Map(updated.map(note => [note.id, note]));
+    resource.setData(current => current ? {
+      ...current,
+      notes: current.notes.map(note => updatedById.get(note.id) ?? note),
+    } : current);
+    clearSelection();
+  }
+
   async function updateSelected(updates: Partial<Pick<Note, 'categoryId' | 'pinned'>>) {
     if (!selectedNoteIdsForActions.length || bulkActionLoading) return;
     setBulkActionLoading(true);
     try {
-      const updated = await api.notes.bulkUpdate(selectedNoteIdsForActions, updates);
-      const updatedById = new Map(updated.map(note => [note.id, note]));
-      resource.setData(current => current ? {
-        ...current,
-        notes: current.notes.map(note => updatedById.get(note.id) ?? note),
-      } : current);
-      clearSelection();
+      await saveSelected(updates);
     } catch (cause) {
       void showError('Could not update notes', reportError('Could not update notes', cause));
+    } finally {
+      setBulkActionLoading(false);
+    }
+  }
+
+  async function createCategoryAndMove() {
+    const name = newCategoryName.trim();
+    if (!name || !selectedNoteIdsForActions.length || bulkActionLoading) return;
+    setBulkActionLoading(true);
+    try {
+      const category = await api.notes.createCategory(name, colors.accent);
+      resource.setData(current => current ? { ...current, categories: [...current.categories, category] } : current);
+      setNewCategoryOpen(false);
+      await saveSelected({ categoryId: category.id });
+    } catch (cause) {
+      void showError('Could not move notes', reportError('Could not move notes', cause));
     } finally {
       setBulkActionLoading(false);
     }
@@ -298,12 +322,19 @@ export default function NotesScreen() {
       <AppPopup
         visible={moveCategoryPickerOpen}
         title="Move selected notes"
-        message="Choose a category for the selected notes."
+        scrollContent
         showIcon={false}
         onClose={() => setMoveCategoryPickerOpen(false)}
         footer={<AppButton variant="secondary" label="Cancel" onPress={() => setMoveCategoryPickerOpen(false)} />}
       >
         <View style={styles.categoryChoices}>
+          <AppButton compact variant="ghost" icon="add" label="New category"
+            disabled={bulkActionLoading}
+            onPress={() => {
+              setMoveCategoryPickerOpen(false);
+              setNewCategoryName('');
+              setNewCategoryOpen(true);
+            }} />
           <SilentPressable
             accessibilityRole="button"
             onPress={() => void updateSelected({ categoryId: null })}
@@ -324,6 +355,13 @@ export default function NotesScreen() {
           ))}
         </View>
       </AppPopup>
+      <ModalSheet visible={newCategoryOpen} title="New category"
+        onClose={() => { if (!bulkActionLoading) setNewCategoryOpen(false); }}
+        footer={<AppButton label="Create and move" disabled={!newCategoryName.trim()}
+          loading={bulkActionLoading} onPress={() => void createCategoryAndMove()} />}>
+        <AppInput label="Name" value={newCategoryName} onChangeText={setNewCategoryName}
+          onSubmitEditing={() => void createCategoryAndMove()} returnKeyType="done" />
+      </ModalSheet>
     </Screen>
   );
 }

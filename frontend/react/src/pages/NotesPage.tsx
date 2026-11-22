@@ -1,7 +1,7 @@
 import { CompactPopover } from '../components/CompactPopover';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Alert, Box, Button, CircularProgress,
+    Alert, Box, Button, CircularProgress, ListSubheader,
     ClickAwayListener, DialogActions, DialogContent, DialogContentText,
     DialogTitle, Divider, ListItemIcon, ListItemText,
     Menu, MenuItem, Popover, Snackbar,
@@ -72,6 +72,8 @@ export function NotesPage() {
     const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
     const [selectionMode, setSelectionMode] = useState(false);
     const [bulkActionLoading, setBulkActionLoading] = useState(false);
+    const [bulkActions, setBulkActions] = useState<{ anchor: HTMLElement } | { top: number; left: number } | null>(null);
+    const [createBulkCategory, setCreateBulkCategory] = useState(false);
     const selectionAnchorIdRef = useRef<string | null>(null);
     const [focusMode, setFocusMode] = useState(false);
     const [noteIdToFocus, setNoteIdToFocus] = useState<string | null>(null);
@@ -79,6 +81,9 @@ export function NotesPage() {
     const [noteCategoryMenu, setNoteCategoryMenu] = useState<NoteContextMenuState | null>(null);
     const [noteDeleteAnchorEl, setNoteDeleteAnchorEl] = useState<HTMLElement | null>(null);
     const [noteDeleteAnchorPosition, setNoteDeleteAnchorPosition] = useState<NoteDeleteAnchorPosition | null>(null);
+
+    const allSelectedNotesPinned = selectedNoteIds.length > 0
+        && notes.filter(note => selectedNoteIds.includes(note.id)).every(note => note.pinned);
 
     const noteCounts = useMemo(() => {
         const counts: Record<string, number> = {
@@ -216,31 +221,16 @@ export function NotesPage() {
     }
 
     function clearNoteSelection() {
+        setBulkActions(null);
         setSelectedNoteIds([]);
         setSelectionMode(false);
         selectionAnchorIdRef.current = null;
     }
 
     function handleNotesListClickAway() {
-        if (selectionMode && !noteDeleteTarget && !bulkDeleteDialogOpen && !categoryDialogOpen && !categoryToDelete) {
+        if (selectionMode && !bulkActions && !bulkActionLoading && !noteDeleteTarget && !bulkDeleteDialogOpen && !categoryDialogOpen && !categoryToDelete) {
             clearNoteSelection();
         }
-    }
-
-    function handleFilterChange(filter: NotesFilter) {
-        const categoryId = filter === 'uncategorized'
-            ? null
-            : categories.some(category => category.id === filter)
-                ? filter
-                : undefined;
-
-        if (selectionMode && selectedNoteIds.length > 0 && categoryId !== undefined && !bulkActionLoading) {
-            setActiveFilter(filter);
-            void handleBulkUpdate({ categoryId });
-            return;
-        }
-
-        setActiveFilter(filter);
     }
 
     async function handleBulkUpdate(updates: { pinned?: boolean; categoryId?: string | null }) {
@@ -299,6 +289,10 @@ export function NotesPage() {
     function handleNoteContextMenu(note: Note, event: React.MouseEvent<HTMLElement>) {
         event.preventDefault();
         event.stopPropagation();
+        if (selectionMode && selectedNoteIds.includes(note.id)) {
+            setBulkActions({ top: event.clientY + 2, left: event.clientX + 2 });
+            return;
+        }
         setSelectedNoteIds([note.id]);
         setSelectionMode(false);
         selectionAnchorIdRef.current = note.id;
@@ -331,7 +325,8 @@ export function NotesPage() {
 
         const categoryId = await createCategory(name, color);
         if (categoryId) {
-            setActiveFilter(categoryId);
+            if (createBulkCategory) await handleBulkUpdate({ categoryId });
+            else setActiveFilter(categoryId);
             return true;
         }
         return false;
@@ -397,7 +392,7 @@ export function NotesPage() {
                         categories={categories}
                         activeFilter={activeFilter}
                         noteCounts={noteCounts}
-                        onFilterChange={handleFilterChange}
+                        onFilterChange={setActiveFilter}
                         onAddCategory={() => {
                             setEditingCategory(null);
                             setCategoryDialogOpen(true);
@@ -435,7 +430,7 @@ export function NotesPage() {
                                 onToggleNoteSelection={toggleNoteSelection}
                                 onSelectAllVisible={selectAllVisibleNotes}
                                 onClearSelection={clearNoteSelection}
-                                onRequestBulkDelete={() => setBulkDeleteDialogOpen(true)}
+                                onOpenBulkActions={anchor => setBulkActions({ anchor })}
                                 onNoteContextMenu={handleNoteContextMenu}
                             />
                         </Box>
@@ -558,10 +553,61 @@ export function NotesPage() {
                 )}
             </Menu>
 
+            <Menu
+                open={bulkActions !== null && selectedNoteIds.length > 0}
+                onClose={() => setBulkActions(null)}
+                anchorReference={bulkActions && 'anchor' in bulkActions ? 'anchorEl' : 'anchorPosition'}
+                anchorEl={bulkActions && 'anchor' in bulkActions ? bulkActions.anchor : undefined}
+                anchorPosition={bulkActions && 'top' in bulkActions ? bulkActions : undefined}
+                MenuListProps={{ dense: true }}
+                slotProps={{ paper: { sx: { minWidth: 215, borderRadius: 2.5, maxHeight: 400 } } }}
+            >
+                <MenuItem disabled={bulkActionLoading} onClick={() => {
+                    setBulkActions(null);
+                    void handleBulkUpdate({ pinned: !allSelectedNotesPinned });
+                }}>
+                    <ListItemIcon><PushPinOutlinedIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText>{allSelectedNotesPinned
+                        ? 'Unpin selected notes' : 'Pin selected notes'}</ListItemText>
+                </MenuItem>
+                <MenuItem disabled={bulkActionLoading} onClick={() => {
+                    setBulkActions(null);
+                    setBulkDeleteDialogOpen(true);
+                }} sx={{ color: 'error.main' }}>
+                    <ListItemIcon sx={{ color: 'inherit' }}><DeleteOutlineRoundedIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText>Delete selected notes</ListItemText>
+                </MenuItem>
+                <Divider />
+                <ListSubheader>Move to category</ListSubheader>
+                <MenuItem disabled={bulkActionLoading} onClick={() => {
+                    setBulkActions(null);
+                    setEditingCategory(null);
+                    setCreateBulkCategory(true);
+                    setCategoryDialogOpen(true);
+                }}>
+                    <ListItemIcon><AddRoundedIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText>New category</ListItemText>
+                </MenuItem>
+                {[{ id: null, name: 'Uncategorized', color: null }, ...categories].map(category => (
+                    <MenuItem key={category.id ?? 'uncategorized'} disabled={bulkActionLoading} onClick={() => {
+                        setBulkActions(null);
+                        void handleBulkUpdate({ categoryId: category.id });
+                    }}>
+                        <ListItemIcon>{category.color
+                            ? <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: category.color }} />
+                            : <FolderOutlinedIcon fontSize="small" />}</ListItemIcon>
+                        <ListItemText>{category.name}</ListItemText>
+                    </MenuItem>
+                ))}
+            </Menu>
+
             <CategoryDialog
                 open={categoryDialogOpen}
                 category={editingCategory}
-                onClose={() => setCategoryDialogOpen(false)}
+                onClose={() => {
+                    setCategoryDialogOpen(false);
+                    setCreateBulkCategory(false);
+                }}
                 onSave={handleCategorySave}
             />
 
