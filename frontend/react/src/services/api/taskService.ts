@@ -508,9 +508,7 @@ export const taskService = {
     async getHomeTaskSnapshot(displayDate: string, forceRefresh = false): Promise<Task[]> {
         const olderKey = homeOlderTasksCacheKey();
         if (forceRefresh) homeOlderTasksCache.invalidate(olderKey);
-        const dayTasksPromise = displayDate === currentTaskDateKey()
-            ? this.getTodayTasks(forceRefresh)
-            : this.getHomeTasksForDate(displayDate, forceRefresh);
+        const dayTasksPromise = this.getHomeTasksForDate(displayDate, forceRefresh);
         const [dayTasks, older] = await Promise.all([
             dayTasksPromise,
             homeOlderTasksCache.get(olderKey, async () => {

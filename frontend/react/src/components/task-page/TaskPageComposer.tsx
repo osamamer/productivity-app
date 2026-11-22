@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, IconButton, InputAdornment, TextField, Typography } from '@mui/material';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import { useMatch } from 'react-router-dom';
 import { SmartTaskInput } from '../input/SmartTaskInput.tsx';
 import { TaskToCreate } from '../../types/TaskToCreate.tsx';
 
@@ -17,6 +18,22 @@ export const TaskPageComposer = React.memo(function TaskPageComposer({
     onSearchChange,
 }: TaskPageComposerProps) {
     const [searchMode, setSearchMode] = React.useState(false);
+    const searchInput = React.useRef<HTMLInputElement>(null);
+    const tasksRoute = useMatch('/tasks');
+
+    React.useEffect(() => {
+        if (!tasksRoute) return;
+        const openSearch = (event: KeyboardEvent) => {
+            if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey
+                || event.key.toLowerCase() !== 'f') return;
+            event.preventDefault();
+            setSearchMode(true);
+            searchInput.current?.focus();
+        };
+        window.addEventListener('keydown', openSearch);
+        return () => window.removeEventListener('keydown', openSearch);
+    }, [tasksRoute]);
+
 
     const closeSearch = () => {
         setSearchMode(false);
@@ -58,6 +75,7 @@ export const TaskPageComposer = React.memo(function TaskPageComposer({
                 {searchMode ? (
                     <TextField
                         data-task-search="true"
+                        inputRef={searchInput}
                         value={searchQuery}
                         onChange={event => onSearchChange(event.target.value)}
                         onKeyDown={event => {

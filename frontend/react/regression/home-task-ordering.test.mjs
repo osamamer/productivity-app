@@ -4,6 +4,7 @@ import { createServer } from 'vite';
 
 let viteServer;
 let compareHomeTasks;
+let orderHomeSchedule;
 let compareHomeTaskListItems;
 
 before(async () => {
@@ -14,7 +15,7 @@ before(async () => {
     server: { middlewareMode: true, ws: false, watch: null },
     logLevel: 'silent',
   });
-  ({ compareHomeTasks, compareHomeTaskListItems } = await viteServer.ssrLoadModule('/src/services/utils/homeTaskOrdering.ts'));
+  ({ compareHomeTasks, compareHomeTaskListItems, orderHomeSchedule } = await viteServer.ssrLoadModule('/src/services/utils/homeTaskOrdering.ts'));
 });
 
 after(async () => {
@@ -60,4 +61,21 @@ test('moves a group below active Home rows when its last task is completed', () 
   assert.deepEqual(rows.toSorted(compareHomeTaskListItems).map(row => row.id), ['group', 'active', 'done']);
   group.tasks[1].completed = true;
   assert.deepEqual(rows.toSorted(compareHomeTaskListItems).map(row => row.id), ['active', 'group', 'done']);
+});
+
+test('orders Home by time and lets priority move tasks within a two-hour window', () => {
+  const scheduled = (hour, importance, completed = false) => ({
+    taskId: hour, completed, importance, scheduledPerformDateTime: `2026-11-22T${hour}:00`,
+  });
+  const tasks = [
+    scheduled('12:00', 10),
+    scheduled('09:00', 2),
+    scheduled('10:30', 6),
+    scheduled('08:00', 10, true),
+    scheduled('09:30', 2),
+  ];
+
+  assert.deepEqual(orderHomeSchedule(tasks).map(task => task.taskId), [
+    '10:30', '09:00', '09:30', '12:00', '08:00',
+  ]);
 });

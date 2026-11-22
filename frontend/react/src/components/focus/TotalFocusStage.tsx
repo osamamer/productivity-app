@@ -27,6 +27,7 @@ const INTERACTIVE_SELECTOR = 'button, a, input, textarea, [contenteditable], [da
 export function TotalFocusStage({ sessionId, header, children, leaving = false }: { sessionId: string; header: ReactNode; children: ReactNode; leaving?: boolean }) {
     const [notes, setNotes] = useState<PlacedFocusNote[]>(() => focusNotesForSession(sessionId));
     const nextId = useRef(Math.max(0, ...notes.map(note => note.id + 1)));
+    const [newNoteId, setNewNoteId] = useState<number | null>(null);
     const cardRef = useRef<HTMLDivElement>(null);
 
     // The card glides from where the pomodoro was in the list to the middle of the screen.
@@ -40,8 +41,8 @@ export function TotalFocusStage({ sessionId, header, children, leaving = false }
         const dy = (origin.top + origin.height / 2) - (target.top + target.height / 2);
         card.animate(
             [
-                { transform: `translate(${dx}px, ${dy}px) scale(${origin.width / target.width}, ${origin.height / target.height})` },
-                { transform: 'translate(0, 0) scale(1, 1)' },
+                { transform: `translate(${dx}px, ${dy}px)` },
+                { transform: 'translate(0, 0)' },
             ],
             { duration: GLIDE_MS, easing: GLIDE_EASING },
         );
@@ -49,15 +50,17 @@ export function TotalFocusStage({ sessionId, header, children, leaving = false }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    const replaceNotes = (updated: PlacedFocusNote[]) => {
+        rememberFocusNotes(sessionId, updated);
+        setNotes(updated);
+    };
+
     const placeNote = (event: MouseEvent<HTMLDivElement>) => {
-        if ((event.target as HTMLElement).closest(INTERACTIVE_SELECTOR)) return;
+        if (leaving || (event.target as HTMLElement).closest(INTERACTIVE_SELECTOR)) return;
         const { clientX, clientY } = event;
         const id = nextId.current++;
-        setNotes(current => {
-            const updated = [...current, { id, x: clientX, y: clientY, text: '', savedText: '', noteId: null, pendingSave: Promise.resolve() }];
-            rememberFocusNotes(sessionId, updated);
-            return updated;
-        });
+        replaceNotes([...notes, { id, x: clientX, y: clientY, text: '' }]);
+        setNewNoteId(id);
     };
 
     return (
@@ -67,15 +70,16 @@ export function TotalFocusStage({ sessionId, header, children, leaving = false }
                 position: 'fixed',
                 inset: 0,
                 zIndex: 1,
+                pointerEvents: leaving ? 'none' : 'auto',
                 overflow: 'hidden',
                 backgroundColor: 'background.default',
                 cursor: 'text',
                 animation: `${leaving ? fadeOut : fadeIn} ${GLIDE_MS}ms ${GLIDE_EASING} forwards`,
             }}
         >
-            {header}
+            {!leaving && header}
             <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none', px: 2 }}>
-                <Box ref={cardRef} data-focus-card sx={{ pointerEvents: 'auto', cursor: 'default', zoom: 1.15, width: 'min(420px, 100%)' }}>
+                <Box ref={cardRef} data-focus-card sx={{ pointerEvents: leaving ? 'none' : 'auto', cursor: 'default', width: 'min(468px, 100%)' }}>
                     {children}
                 </Box>
             </Box>
@@ -83,11 +87,9 @@ export function TotalFocusStage({ sessionId, header, children, leaving = false }
                 <FocusNote
                     key={note.id}
                     note={note}
-                    onDiscard={() => setNotes(current => {
-                        const updated = current.filter(item => item.id !== note.id);
-                        rememberFocusNotes(sessionId, updated);
-                        return updated;
-                    })}
+                    autoFocus={note.id === newNoteId}
+                    onChange={value => replaceNotes(notes.map(item => item.id === note.id ? { ...item, text: value } : item))}
+                    onDiscard={() => replaceNotes(notes.filter(item => item.id !== note.id))}
                 />
             ))}
         </Box>

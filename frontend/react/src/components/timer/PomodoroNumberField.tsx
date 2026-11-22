@@ -62,6 +62,7 @@ export function PomodoroNumberField({
             helperText={validationMessage}
             stepperTabIndex={-1}
             inputProps={{
+                required: true,
                 inputMode: 'numeric',
                 style: { textAlign: 'left' },
                 onFocus: event => event.currentTarget.select(),

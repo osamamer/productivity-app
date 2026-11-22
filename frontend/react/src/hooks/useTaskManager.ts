@@ -286,9 +286,7 @@ export function useTaskManager() {
         const requestDataGeneration = taskDataGenerationRef.current;
         try {
             const displayDate = currentBucketDateKey();
-            const dayTasks = await (displayDate === dateKey(new Date())
-                ? taskService.getTodayTasks()
-                : taskService.getHomeTasksForDate(displayDate));
+            const dayTasks = await taskService.getHomeTasksForDate(displayDate);
             const tasks = splitTasksByDate(uniqueTasksById(dayTasks), displayDate).today;
             if (taskDataGenerationRef.current !== requestDataGeneration
                 || displayDate !== currentBucketDateKey()) return;

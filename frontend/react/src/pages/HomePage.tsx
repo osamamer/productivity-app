@@ -60,7 +60,7 @@ import { GroupTaskInputRow } from '../components/task/GroupTaskInputRow';
 import { StatGroupTaskComposer } from '../components/task/StatGroupTaskComposer';
 import { GroupTaskCount } from '../components/task/GroupTaskCount';
 import { shouldRenderTaskGroup } from '../components/task-page/taskPageSectionUtils';
-import { compareHomeTaskListItems, compareHomeTasks } from '../services/utils/homeTaskOrdering';
+import { compareHomeTaskListItems, orderHomeSchedule } from '../services/utils/homeTaskOrdering';
 import { TaskParentPopover } from '../components/task/TaskParentPopover';
 import { FlatTaskRow } from '../components/FlatTaskRow';
 import { TaskToCreate } from '../types/TaskToCreate';
@@ -335,7 +335,7 @@ const buttonFadeIn = keyframes`
 `;
 
 const TASKS_FADE_DURATION_MS = 220;
-const TOTAL_FOCUS_TRANSITION_MS = 260;
+const TOTAL_FOCUS_TRANSITION_MS = 380;
 const FOCUS_TASK_SLIDE_DURATION_MS = 520;
 const SELECTION_ACTIONS_EDGE_PADDING = 12;
 const SELECTION_ACTIONS_GAP = 4;
@@ -1465,7 +1465,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
             mergedTasks.push(taskToAdd);
         };
 
-        if (homeDisplayDayKey === dateKey(new Date())) todayTasks.forEach(addMainTask);
+        todayTasks.filter(task => isScheduledForHomeDay(task, homeDisplayDayKey)).forEach(addMainTask);
         allTasks.forEach(task => {
             if (isScheduledForHomeDay(task, homeDisplayDayKey) || task.taskId === activePomodoroTaskIdForHome) {
                 addMainTask(task);
@@ -1475,7 +1475,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
             addMainTask(resolvedActivePomodoroTask);
         }
 
-        return mergedTasks;
+        return orderHomeSchedule(mergedTasks);
     }, [activePomodoroTaskIdForHome, allTasks, homeDisplayDayKey, resolvedActivePomodoroTask, todayTasks]);
     const todayTasksForCompletion = useMemo(() => homeTodayTasks.filter(task => (
         isScheduledForHomeDay(task, homeDisplayDayKey) && !pendingDeletedTaskIdSet.has(task.taskId)
@@ -1515,8 +1515,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
                     showCompletedToday
                     || !task.completed
                     || task.taskId === activePomodoroTaskIdForHome
-                ))
-                .sort(compareHomeTasks);
+                ));
         },
         [activePomodoroTaskIdForHome, allTasks, allTodayTasksComplete, homeTodayTasks,
             pendingDeletedTaskIdSet, pendingHomeDateTaskIds, showCompletionDetails],
@@ -4581,7 +4580,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     const totalFocus = useNavigationVisibility()?.totalFocus ?? false;
     const [totalFocusLeaving, setTotalFocusLeaving] = useState(false);
     const wasTotalFocus = useRef(totalFocus);
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (wasTotalFocus.current && !totalFocus) setTotalFocusLeaving(true);
         wasTotalFocus.current = totalFocus;
     }, [totalFocus]);
@@ -4595,23 +4594,22 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
         ?? activePomodoroTaskIdForRender ?? 'focus';
     // Remember where the pomodoro sits in the list, so total focus can start from there.
     useLayoutEffect(() => {
-        if (!stageShown) rememberFocusOrigin(focusedPomodoroRowRef.current?.getBoundingClientRect() ?? null);
+        if (!totalFocus) rememberFocusOrigin(focusedPomodoroRowRef.current?.getBoundingClientRect() ?? null);
     });
 
-    if (stageShown) {
-        return (
-            <TotalFocusStage
-                key={focusSessionId}
-                sessionId={focusSessionId}
-                header={modeSwitch}
-                leaving={!totalFocus}
-            >
-                {activePomodoroTask && renderTaskRow(activePomodoroTask)}
-            </TotalFocusStage>
-        );
-    }
-
     return (
+        <>
+            {stageShown && (
+                <TotalFocusStage
+                    key={focusSessionId}
+                    sessionId={`${user?.id ?? ''}:${focusSessionId}`}
+                    header={modeSwitch}
+                    leaving={!totalFocus}
+                >
+                    {totalFocus && activePomodoroTask && renderTaskRow(activePomodoroTask)}
+                </TotalFocusStage>
+            )}
+            {!totalFocus && (
         <PageWrapper>
             <Box
                 sx={{ position: 'relative', flex: 1 }}
@@ -5403,6 +5401,8 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
 
             </Box>
         </PageWrapper>
+            )}
+        </>
     );
 }
 

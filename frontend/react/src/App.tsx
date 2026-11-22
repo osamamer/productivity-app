@@ -78,6 +78,28 @@ function UserRoutes() {
 }
 
 function ProtectedApp() {
+    useEffect(() => {
+        const longBreakMs = 30 * 60 * 1000;
+        let lastVisibleAt = Date.now();
+
+        const resume = () => {
+            if (document.visibilityState !== 'visible' || !navigator.onLine) return;
+            const now = Date.now();
+            if (now - lastVisibleAt >= longBreakMs) window.location.reload();
+            lastVisibleAt = now;
+        };
+        const timer = window.setInterval(resume, 60_000);
+        document.addEventListener('visibilitychange', resume);
+        window.addEventListener('focus', resume);
+        window.addEventListener('online', resume);
+        return () => {
+            window.clearInterval(timer);
+            document.removeEventListener('visibilitychange', resume);
+            window.removeEventListener('focus', resume);
+            window.removeEventListener('online', resume);
+        };
+    }, []);
+
     return (
         <ProtectedRoute>
             <PomodoroProvider>

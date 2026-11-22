@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, Box, ButtonBase, Button, Chip, Popover, Stack, TextField, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { format } from 'date-fns';
+import { AppTimeField } from '../../input/AppPickerFields';
 import { ActivityPicker } from '../../activity/ActivityPicker';
 import { taskService } from '../../../services/api/taskService';
 import { Activity } from '../../../types/Activity';
@@ -26,9 +27,11 @@ type ChunkKind = 'activity' | 'focus';
 const MAX_TASK_CHOICES = 50;
 const PRIORITY_TINT = { high: '#ef4444', medium: '#eab308' } as const;
 
-function withTime(base: number, time: string): number {
+function withTime(base: number, time: string, endOfDay = false): number {
+    if (!/^\d{2}:\d{2}$/.test(time)) return Number.NaN;
     const [hours, minutes] = time.split(':').map(Number);
     const date = new Date(base);
+    if (endOfDay && time === '00:00') date.setDate(date.getDate() + 1);
     date.setHours(hours, minutes, 0, 0);
     return date.getTime();
 }
@@ -41,7 +44,8 @@ export function QuickChunkPopover({ draft, activities, onClose, onCreate }: Quic
             onClose={onClose}
             anchorReference="anchorPosition"
             anchorPosition={draft?.anchor}
-            slotProps={{ paper: { sx: { p: 2, width: 340, maxWidth: 'calc(100vw - 32px)', borderRadius: 2 } } }}
+            marginThreshold={16}
+            slotProps={{ paper: { sx: { p: 2, width: 340, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', borderRadius: 2 } } }}
         >
             {/* Keyed so each new draft starts with fresh fields. */}
             {draft && <ChunkForm key={`${draft.start}-${draft.end}`} draft={draft} activities={activities} onClose={onClose} onCreate={onCreate} />}
@@ -152,7 +156,7 @@ function ChunkForm({ draft, activities, onClose, onCreate }: Omit<QuickChunkPopo
 
     const save = async () => {
         const startMs = withTime(draft.start, start);
-        const endMs = withTime(draft.start, end);
+        const endMs = withTime(draft.start, end, true);
         if (kind === 'activity' && !title.trim()) return setError('Give it a name.');
         if (kind === 'focus' && !task) return setError('Pick the task to focus on.');
         if (!(endMs > startMs)) return setError('The end needs to be after the start.');
@@ -210,12 +214,12 @@ function ChunkForm({ draft, activities, onClose, onCreate }: Omit<QuickChunkPopo
                 </>
             ) : (
                 <Box>
-                    <TaskChoice tasks={tasks} chunkStart={withTime(draft.start, start)} selected={task} onSelect={setTask} />
+                    <TaskChoice tasks={tasks} chunkStart={start ? withTime(draft.start, start) : draft.start} selected={task} onSelect={setTask} />
                 </Box>
             )}
             <Stack direction="row" spacing={1}>
-                <TextField label="From" type="time" size="small" value={start} onChange={event => setStart(event.target.value)} sx={{ flex: 1 }} slotProps={{ inputLabel: { shrink: true } }} />
-                <TextField label="Until" type="time" size="small" value={end} onChange={event => setEnd(event.target.value)} sx={{ flex: 1 }} slotProps={{ inputLabel: { shrink: true } }} />
+                <AppTimeField label="From" size="small" value={start} onChange={setStart} sx={{ flex: 1, minWidth: 0 }} />
+                <AppTimeField label="Until" size="small" value={end} onChange={setEnd} sx={{ flex: 1, minWidth: 0 }} />
             </Stack>
             {error && <Alert severity="error">{error}</Alert>}
             <Stack direction="row" justifyContent="flex-end" spacing={1}>

@@ -1835,7 +1835,11 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             </Button>
                         </Box>
                     ) : !isActive ? (
-                        <Box>
+                        <Box component="form" onSubmit={event => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            handleStart();
+                        }}>
                             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mb: 1.5 }}>
                                 {(
                                     [
@@ -1859,7 +1863,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 variant="outlined"
                                 size="small"
                                 fullWidth
-                                onClick={handleStart}
+                                type="submit"
                                 disabled={!canStartPomodoro}
                                 startIcon={<PlayArrowIcon />}
                                 sx={{
@@ -1895,13 +1899,14 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 ml: waitingForPhase ? 1 : 0.5,
                                 display: 'flex',
                                 justifyContent: 'center',
+                                alignItems: waitingForPhase ? 'flex-start' : 'center',
                                 flexDirection: 'column',
                             }}>
                                 <Typography
                                     variant={waitingForPhase ? 'h5' : 'caption'}
                                     sx={{
                                         display: 'block',
-                                        width: '100%',
+                                        textAlign: waitingForPhase ? 'left' : 'center',
                                         fontWeight: 600,
                                         textTransform: 'uppercase',
                                         letterSpacing: waitingForPhase ? 1.1 : 1,
