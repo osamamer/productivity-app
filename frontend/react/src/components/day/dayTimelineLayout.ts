@@ -16,6 +16,8 @@ export interface PlannedInput extends TimeInterval {
     // 'timer' is time actually spent, from an activity timer.
     kind: 'event' | 'focus' | 'timer';
     title: string;
+    // Set on planned time (not on what was done): an activity chunk, even one whose activity was deleted, or planned focus.
+    shade?: 'activity' | 'focus';
     // Set for a chunk: its activity's name and colour.
     activityName?: string;
     color?: string;

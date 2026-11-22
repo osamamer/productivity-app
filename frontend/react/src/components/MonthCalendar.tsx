@@ -30,6 +30,7 @@ import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import FilterListIcon from '@mui/icons-material/FilterList';
 import CheckIcon from '@mui/icons-material/Check';
+import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong';
 import SaveAsIcon from '@mui/icons-material/SaveAs';
 import ViewDayIcon from '@mui/icons-material/ViewDay';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -67,6 +68,7 @@ import { CALENDAR_COLORS, Calendar, calendarColorHex } from '../types/Calendar';
 import { CalendarChipSelect } from './calendar/CalendarSelect';
 import { useActivities } from '../hooks/useActivities';
 import { activityHex } from './activity/activityColors';
+import { plannedTimeBorder, plannedTimeFill, type PlannedTimeKind } from './day/timelineStyles';
 import { isCalendarDailyTaskVisible, isCalendarStatTaskVisible } from '../services/utils/calendarStatTaskVisibility';
 import { includeDirectStatChildren } from '../services/utils/statDefinitionHierarchy';
 import { statNumericValueLabel } from './stats/statVisualization';
@@ -962,16 +964,18 @@ export function MonthCalendar({
             return false;
         });
         const visibleEvents = events.filter(event => visibleCalendarIds.has(event.calendarId)
-            && (showChunks || !event.activityId));
+            && (showChunks || (!event.activityId && !event.taskId)));
         const eventEntries = visibleEvents.flatMap(event => {
             const calendar = calendars.find(candidate => candidate.id === event.calendarId);
             const calendarColor = calendarColorHex(calendar?.color, theme.palette.primary.main);
             const calendarFillClass = `calendar-event-fill-${calendar?.color ?? 'accent'}`;
-            // Chunks of planned time read as a tinted block in their activity's colour, not a solid event.
-            const chunkActivity = event.activityId
+            // Planned time (an activity chunk or focus planned for a task) is shaded in grey pencil
+            // instead of filled like an event; an activity chunk keeps its colour on the leading edge.
+            const plannedKind: PlannedTimeKind | null = event.taskId ? 'focus' : event.activityId ? 'activity' : null;
+            const chunkActivity = plannedKind === 'activity'
                 ? activities?.find(activity => activity.id === event.activityId)
                 : undefined;
-            const chunkColor = event.activityId ? activityHex(chunkActivity?.color, calendarColor) : null;
+            const chunkColor = plannedKind === 'activity' ? activityHex(chunkActivity?.color, calendarColor) : null;
             return expandCalendarEvent(event, calendarRange.start, calendarRange.end).map(occurrence => ({
             id: occurrence.id,
             title: event.title,
@@ -980,22 +984,26 @@ export function MonthCalendar({
             allDay: occurrence.allDay,
             backgroundColor: occurrence.status === 'CANCELLED'
                 ? alpha(theme.palette.text.disabled, 0.2)
-                : chunkColor
-                    ? alpha(chunkColor, theme.palette.mode === 'dark' ? 0.24 : 0.14)
+                : plannedKind
+                    ? 'transparent'
                     : occurrence.status === 'TENTATIVE'
                         ? `${calendarColor}70`
                         : calendarColor,
-            borderColor: occurrence.status === 'CANCELLED' ? theme.palette.error.main : chunkColor ?? calendarColor,
+            borderColor: occurrence.status === 'CANCELLED'
+                ? theme.palette.error.main
+                : plannedKind
+                    ? alpha(theme.palette.text.primary, plannedKind === 'focus' ? 0.35 : 0.2)
+                    : calendarColor,
             textColor: occurrence.status === 'CANCELLED'
                 ? theme.palette.text.secondary
-                : chunkColor
+                : plannedKind
                     ? theme.palette.text.primary
                     : theme.palette.primary.contrastText,
             editable: !event.sourceId,
             startEditable: !event.sourceId,
             durationEditable: false,
             classNames: [
-                chunkColor ? 'calendar-chunk-event' : calendarFillClass,
+                plannedKind ? `calendar-planned-${plannedKind}` : calendarFillClass,
                 occurrence.status === 'CANCELLED'
                     ? 'calendar-cancelled-event'
                     : occurrence.status === 'TENTATIVE'
@@ -1010,9 +1018,12 @@ export function MonthCalendar({
                 calendarEventOccurrenceDate: occurrence.occurrenceDate,
                 calendarEventOccurrenceStatus: occurrence.status,
                 status: occurrence.status,
+                plannedKind,
                 chunkColor,
-                fullDescription: chunkActivity
-                    ? `${event.title} · ${chunkActivity.name} chunk`
+                fullDescription: plannedKind === 'focus'
+                    ? `${event.title} · planned focus`
+                    : plannedKind === 'activity'
+                    ? `${event.title} · ${chunkActivity?.name ?? 'Activity'} chunk`
                     : event.sourceId
                     ? `${event.title} · ${occurrence.status.toLowerCase()}`
                     : `${event.description || event.title} · ${occurrence.status.toLowerCase()}`,
@@ -1156,6 +1167,12 @@ export function MonthCalendar({
                         }}
                     />
                 )}
+                {arg.event.extendedProps.plannedKind === 'focus' && (
+                    <CenterFocusStrongIcon
+                        aria-label="Planned focus"
+                        sx={{ color: theme.palette.text.secondary, flexShrink: 0, fontSize: '0.95rem' }}
+                    />
+                )}
                 <Box component="span" className="calendar-event-title">
                     {arg.event.title || 'Untitled'}
                 </Box>
@@ -1166,12 +1183,14 @@ export function MonthCalendar({
                 )}
             </Box>
         );
-    }, [theme.palette.success.main]);
+    }, [theme.palette.success.main, theme.palette.text.secondary]);
 
     const handleEventDidMount = useCallback((info: EventMountArg) => {
         const fullDescription = info.event.extendedProps.fullDescription;
         info.el.setAttribute('title', fullDescription);
         info.el.style.cursor = 'pointer';
+        const chunkColor = info.event.extendedProps.chunkColor;
+        if (typeof chunkColor === 'string') info.el.style.setProperty('--chunk-color', chunkColor);
 
         const eventType = info.event.extendedProps.eventType;
         if (eventType !== 'task' && eventType !== 'calendarEvent') return;
@@ -2109,6 +2128,13 @@ export function MonthCalendar({
             && !events.find(event => event.id === calendarEventId)?.sourceId);
         const isCancelled = eventApi.classNames.includes('calendar-cancelled-event');
         const isTentative = eventApi.classNames.includes('calendar-tentative-event');
+        const plannedKind = eventApi.extendedProps.plannedKind as PlannedTimeKind | null | undefined;
+        const plannedStyle = plannedKind && !isCancelled
+            ? {
+                ...plannedTimeBorder(plannedKind, theme, eventApi.extendedProps.chunkColor as string | null),
+                background: plannedTimeFill(plannedKind, theme),
+            }
+            : {};
         const taskColorClass = eventApi.classNames.find(className => className.startsWith('calendar-task-color-'));
         const taskColor = taskColorClass
             ? calendarColorHex(taskColorClass.replace('calendar-task-color-', ''), theme.palette.primary.main)
@@ -2142,11 +2168,7 @@ export function MonthCalendar({
                     alignItems: 'center',
                     backgroundColor: eventApi.backgroundColor || 'transparent',
                     border: `1px ${isCancelled ? 'dotted' : isTentative ? 'dashed' : 'solid'} ${isTask ? theme.palette.divider : eventApi.borderColor || theme.palette.divider}`,
-                    borderLeft: isTask
-                        ? `3px solid ${taskColor}`
-                        : typeof eventApi.extendedProps.chunkColor === 'string'
-                            ? `3px solid ${eventApi.extendedProps.chunkColor}`
-                            : undefined,
+                    borderLeft: isTask ? `3px solid ${taskColor}` : undefined,
                     borderRadius: isTask ? '0 6px 6px 0' : 1.5,
                     color: eventTextColor,
                     cursor: isDraggable ? 'grab' : 'pointer',
@@ -2166,10 +2188,14 @@ export function MonthCalendar({
                     '&:hover': { filter: theme.palette.mode === 'dark' ? 'brightness(1.12)' : 'brightness(0.96)' },
                     '&:active': isDraggable ? { cursor: 'grabbing' } : undefined,
                     '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}` },
+                    ...plannedStyle,
                 }}
             >
                 {isTaskEntity && completed && (
                     <CheckIcon aria-label="Completed" sx={{ color: theme.palette.success.main, flexShrink: 0, fontSize: '1rem' }} />
+                )}
+                {plannedKind === 'focus' && (
+                    <CenterFocusStrongIcon aria-label="Planned focus" sx={{ color: theme.palette.text.secondary, flexShrink: 0, fontSize: '0.95rem' }} />
                 )}
                 <Box component="span" sx={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {eventApi.title || 'Untitled'}
@@ -2753,8 +2779,21 @@ export function MonthCalendar({
                         '& .fc .calendar-tentative-event': {
                             borderStyle: 'dashed !important',
                         },
-                        '& .fc .calendar-chunk-event': {
-                            borderLeftWidth: '3px !important',
+                        // Planned time is shaded like pencil, the same in every view, including the
+                        // dot-style timed entries of month cells that ignore the event's own colours.
+                        '& .fc .calendar-planned-activity:not(.calendar-cancelled-event)': {
+                            background: `${plannedTimeFill('activity', theme)} !important`,
+                            border: `1px solid ${alpha(theme.palette.text.primary, 0.2)} !important`,
+                            borderLeft: `3px solid var(--chunk-color, ${alpha(theme.palette.text.primary, 0.35)}) !important`,
+                            color: `${theme.palette.text.primary} !important`,
+                        },
+                        '& .fc .calendar-planned-focus:not(.calendar-cancelled-event)': {
+                            background: `${plannedTimeFill('focus', theme)} !important`,
+                            border: `1px dashed ${alpha(theme.palette.text.primary, 0.35)} !important`,
+                            color: `${theme.palette.text.primary} !important`,
+                        },
+                        '& .fc :is(.calendar-planned-activity, .calendar-planned-focus) .fc-event-main': {
+                            color: `${theme.palette.text.primary} !important`,
                         },
                         '& .fc .calendar-cancelled-event': {
                             borderColor: `${theme.palette.error.main} !important`,
