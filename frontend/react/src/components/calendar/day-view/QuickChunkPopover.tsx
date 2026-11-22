@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Box, ButtonBase, Button, Chip, Popover, Stack, TextField, Typography } from '@mui/material';
+import type { PopoverActions } from '@mui/material/Popover';
 import { alpha } from '@mui/material/styles';
 import { format } from 'date-fns';
 import { AppTimeField } from '../../input/AppPickerFields';
@@ -38,14 +39,25 @@ function withTime(base: number, time: string, endOfDay = false): number {
 
 /** Plans a chunk of time from a click on the day view: an activity, or focus on a task, and when. */
 export function QuickChunkPopover({ draft, activities, onClose, onCreate }: QuickChunkPopoverProps) {
+    const position = useRef<PopoverActions>(null);
+    const [paper, setPaper] = useState<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        if (!paper) return;
+        const observer = new ResizeObserver(() => position.current?.updatePosition());
+        observer.observe(paper);
+        return () => observer.disconnect();
+    }, [paper]);
+
     return (
         <Popover
+            action={position}
             open={draft !== null}
             onClose={onClose}
             anchorReference="anchorPosition"
             anchorPosition={draft?.anchor}
             marginThreshold={16}
-            slotProps={{ paper: { sx: { p: 2, width: 340, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', borderRadius: 2 } } }}
+            slotProps={{ paper: { ref: setPaper, sx: { boxSizing: 'border-box', p: 2, width: 340, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', borderRadius: 2 } } }}
         >
             {/* Keyed so each new draft starts with fresh fields. */}
             {draft && <ChunkForm key={`${draft.start}-${draft.end}`} draft={draft} activities={activities} onClose={onClose} onCreate={onCreate} />}
