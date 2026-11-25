@@ -54,6 +54,7 @@ function monitor(paths, popups) {
         notify: () => {},
         appearance: () => null,
         onChange: () => {},
+        backstop: { schedule: async () => true, cancel() {} },
     });
 }
 

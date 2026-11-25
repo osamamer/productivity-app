@@ -144,6 +144,18 @@ computer, in local and cloud mode alike. It replaces the separate App Timeout to
   Site time counts from opening the site until its Firefox session ends, so opening a site with
   little time left today brings that session's end forward. Counts live in
   `~/.local/share/Claritard/timeouts/daily-usage.json` and reset at local midnight.
+- **Minimized time and minimizing (per app, KDE Plasma).** An app's rule can leave out the time
+  its windows are all minimized (or hidden to the tray): auto-close moves its deadline and the
+  daily limit stops counting until a window is restored. It can also minimize the app instead of
+  quitting it when time is up; it is then minimized again whenever restored, until it quits or is
+  opened again through its pause (a new session). A small KWin script
+  (`src/timeouts/kwin/claritard-windows.js`) reports which windows are minimized to the
+  `app.claritard.Windows` D-Bus service, and one-off scripts do the minimizing
+  (`src/timeouts/windowControl.js`). On GNOME and X11 desktops all time counts and apps are quit.
+- **Time left: window or notifications.** A Boundaries setting (no password, `countdownDisplay` in
+  `timeouts.json`) chooses the small "closes in" window or one system notification saying when the
+  app closes, sent again only if the deadline moves (`src/timeouts/countdownDisplay.js`). The one
+  minute and ten second warnings come either way.
 - **Password and wait.** Changing any boundary needs a password, then a ten second wait; the unlock
   lasts fifteen minutes or until the page is left (`src/timeouts/core/editLock.js`, enforced in
   the main process). The first visit asks for a password. It is stored hashed in

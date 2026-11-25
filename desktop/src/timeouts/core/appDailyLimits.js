@@ -11,7 +11,7 @@ function entryProgram(entry) {
 
 /**
  * Apps with a daily limit, one per program even when several launchers start it (the
- * strictest limit wins): `[{ identity, name, target, limitSeconds }]`.
+ * strictest settings win): `[{ identity, name, target, limitSeconds, countMinimized, onTimeUp }]`.
  */
 function limitedApps(config) {
     const byIdentity = new Map();
@@ -25,9 +25,12 @@ function limitedApps(config) {
             continue;
         }
         const existing = byIdentity.get(program.identity);
-        if (!existing || entry.dailyLimitSeconds < existing.limitSeconds) {
-            byIdentity.set(program.identity, { ...program, name: entry.name, limitSeconds: entry.dailyLimitSeconds });
-        }
+        const countMinimized = entry.countMinimized !== false || existing?.countMinimized === true;
+        const onTimeUp = entry.onTimeUp === 'minimize' && (!existing || existing.onTimeUp === 'minimize') ? 'minimize' : 'close';
+        const strictest = !existing || entry.dailyLimitSeconds < existing.limitSeconds
+            ? { ...program, name: entry.name, limitSeconds: entry.dailyLimitSeconds }
+            : existing;
+        byIdentity.set(program.identity, { ...strictest, countMinimized, onTimeUp });
     }
     return [...byIdentity.values()];
 }

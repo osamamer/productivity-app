@@ -1,9 +1,11 @@
 const fs = require('node:fs');
 const { appTarget } = require('./core/appTarget');
-const { runningProcesses, sameSession, endSession } = require('./core/processes');
+const { runningProcesses, sameSession } = require('./core/processes');
 const {
-    targetIdentity, saveAppSession, removeAppSession, listAppSessions, liveAppSession, expireAppSession,
+    targetIdentity, saveAppSession, readAppSession, removeAppSession, listAppSessions, liveAppSession,
 } = require('./core/appSessions');
+const { countsNow } = require('./core/windows');
+const { NO_WINDOW_CONTROL, applyTimeUp } = require('./timeUp');
 const { readSession, expireBrowser, hasTimedBrowserTab } = require('./core/browserSession');
 const { scheduleCommand, cancelUnit } = require('./core/systemd');
 
@@ -13,6 +15,10 @@ const START_POLL_MS = 500;
 // The backstop timer fires a little after the in-app deadline, which normally wins.
 const BACKSTOP_DELAY_SECONDS = 3;
 const WARNINGS = [60, 10];
+// While an app is paused (minimized), its saved deadline is refreshed this often for a restart.
+const PAUSED_SAVE_MS = 30_000;
+// Without a window list, a held app is minimized again this often in case it was restored.
+const BLIND_MINIMIZE_MS = 5000;
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -20,10 +26,11 @@ function sleep(ms) {
 
 /** Sends the "closes in a minute" and "closes in ten seconds" notifications once each. */
 class Warnings {
-    constructor({ name, totalSeconds, notify }) {
+    constructor({ name, totalSeconds, notify, action = 'close' }) {
         this.name = name;
         this.totalSeconds = totalSeconds;
         this.notify = notify;
+        this.verb = action === 'minimize' ? 'minimizes' : 'closes';
         this.sent = new Set();
     }
 
@@ -32,8 +39,8 @@ class Warnings {
             if (remainingSeconds > threshold || this.totalSeconds < threshold || this.sent.has(threshold)) continue;
             this.sent.add(threshold);
             this.notify({
-                title: `${this.name} closes soon`,
-                body: `${this.name} will close in ${threshold} seconds.`,
+                title: `${this.name} ${this.verb} soon`,
+                body: `${this.name} ${this.verb} in ${threshold} seconds.`,
                 tag: `claritard-timeout-${this.name}-${threshold}`,
                 targetUrl: null,
             });
@@ -45,20 +52,31 @@ class Warnings {
  * Ends timed app sessions when their time is up. One session per program: a second launcher
  * alias for a program that is already being timed does not restart its clock, and neither does
  * closing the app and opening it again before the deadline.
+ *
+ * A session whose rule leaves out minimized time (`countMinimized: false`) pauses while none of
+ * the app's windows is on screen. One whose rule minimizes instead of closing (`onTimeUp`) is
+ * then held: its windows are minimized again whenever they are restored, until the app quits or
+ * is opened again through its launcher, which starts a new session.
  */
 class AppSessionMonitor {
-    constructor({ paths, command, popups, notify, appearance, onChange }) {
+    constructor({
+        paths, command, popups, notify, appearance, onChange, windows = NO_WINDOW_CONTROL,
+        backstop = { schedule: scheduleCommand, cancel: cancelUnit },
+    }) {
         this.paths = paths;
         this.command = command;
+        this.backstop = backstop;
         this.popups = popups;
         this.notify = notify;
         this.appearance = appearance;
         this.onChange = onChange;
+        this.windows = windows;
         this.active = new Map();
+        this.holds = new Map();
     }
 
     get busy() {
-        return this.active.size > 0;
+        return this.active.size > 0 || this.holds.size > 0;
     }
 
     /**
@@ -78,6 +96,7 @@ class AppSessionMonitor {
         if (!entry.closeAfterSeconds) return;
         const target = appTarget(fs.readFileSync(entry.backup, 'utf8'));
         const identity = targetIdentity(target);
+        this.release(identity);
         if (this.active.has(identity)) return;
         this.active.set(identity, null);
         this.onChange();
@@ -96,14 +115,10 @@ class AppSessionMonitor {
                 processes,
                 totalSeconds: entry.closeAfterSeconds,
                 deadline: Date.now() + entry.closeAfterSeconds * 1000,
+                countMinimized: entry.countMinimized !== false,
+                onTimeUp: entry.onTimeUp ?? 'close',
             };
-            saveAppSession(this.paths, session);
-            void scheduleCommand({
-                unit: `claritard-app-expire-${session.id}`,
-                seconds: entry.closeAfterSeconds + BACKSTOP_DELAY_SECONDS,
-                command: [...this.command, `--timeout-expire-app=${session.id}`],
-                description: `Claritard closes ${entry.name} when its time is up`,
-            });
+            this.scheduleBackstop(session);
             await this.watch(session);
         } catch (error) {
             console.error(`Could not time ${entry.name}:`, error);
@@ -117,7 +132,7 @@ class AppSessionMonitor {
     async resume() {
         for (const session of listAppSessions(this.paths)) {
             if (session.deadline <= Date.now()) {
-                await expireAppSession(this.paths, session.id);
+                await this.expire(session.id);
                 continue;
             }
             const identity = session.identity ?? targetIdentity(session.target);
@@ -132,24 +147,87 @@ class AppSessionMonitor {
     }
 
     /**
+     * Ends saved session `id` if its time is up; used by the backstop timer and on resume. A
+     * session that is being watched is left to its watcher.
+     */
+    async expire(id) {
+        const session = readAppSession(this.paths, id);
+        if (!session || session.deadline > Date.now()) return false;
+        if (this.active.has(session.identity ?? targetIdentity(session.target))) return false;
+        if (sameSession(session.target, session.processes, runningProcesses(session.target))) {
+            await this.timeUp(session);
+        }
+        removeAppSession(this.paths, id);
+        return true;
+    }
+
+    /**
+     * The systemd timer that ends the session if Claritard is not running at its deadline.
+     * Rescheduled whenever a pause moves the deadline.
+     */
+    scheduleBackstop(session) {
+        this.cancelBackstop(session);
+        session.backstopUnit = `claritard-app-expire-${session.id}-${Date.now()}`;
+        saveAppSession(this.paths, session);
+        void this.backstop.schedule({
+            unit: session.backstopUnit,
+            seconds: (session.deadline - Date.now()) / 1000 + BACKSTOP_DELAY_SECONDS,
+            command: [...this.command, `--timeout-expire-app=${session.id}`],
+            description: `Claritard ends ${session.name}'s time when it is up`,
+        });
+    }
+
+    cancelBackstop(session) {
+        this.backstop.cancel(session.backstopUnit ?? `claritard-app-expire-${session.id}`);
+    }
+
+    /**
      * Follows `session` until its deadline. While the app is closed the session stays saved and
-     * the "closes in" window is hidden; if the app runs again before the deadline its new
-     * processes take over the session, and they are the ones closed when time is up.
+     * the "closes in" countdown is hidden; if the app runs again before the deadline its new
+     * processes take over the session, and they are the ones ended when time is up.
      */
     async watch(session) {
-        const warnings = new Warnings({ name: session.name, totalSeconds: session.totalSeconds, notify: this.notify });
+        const warnings = new Warnings({
+            name: session.name, totalSeconds: session.totalSeconds, notify: this.notify, action: session.onTimeUp,
+        });
         let shown = false;
+        let pausedSince = null;
+        let lastSaved = 0;
+        let last = Date.now();
         try {
             for (;;) {
-                const remaining = Math.max(0, (session.deadline - Date.now()) / 1000);
+                const now = Date.now();
                 const running = runningProcesses(session.target);
-                if (sameSession(session.target, session.processes, running)) {
-                    if (!shown) this.showPopup(session);
+                const same = sameSession(session.target, session.processes, running);
+                if (same && !countsNow(session, this.windows.isShowing(session.target, session.processes))) {
+                    session.deadline += now - last;
+                    last = now;
+                    if (pausedSince === null) {
+                        pausedSince = now;
+                        this.cancelBackstop(session);
+                        this.popups.close(session.id);
+                        shown = false;
+                    }
+                    if (now - lastSaved >= PAUSED_SAVE_MS) {
+                        saveAppSession(this.paths, session);
+                        lastSaved = now;
+                    }
+                    await sleep(CHECK_MS);
+                    continue;
+                }
+                last = now;
+                if (pausedSince !== null) {
+                    pausedSince = null;
+                    this.scheduleBackstop(session);
+                }
+                const remaining = Math.max(0, (session.deadline - now) / 1000);
+                if (same) {
+                    this.showCountdown(session);
                     shown = true;
                     warnings.check(remaining);
                     if (remaining <= 0) break;
                 } else if (remaining <= 0) {
-                    cancelUnit(`claritard-app-expire-${session.id}`);
+                    this.cancelBackstop(session);
                     return;
                 } else if (running.length) {
                     session.processes = running;
@@ -162,19 +240,58 @@ class AppSessionMonitor {
                 await sleep(Math.min(CHECK_MS, remaining * 1000));
             }
             this.popups.close(session.id);
-            await endSession(session.target, session.processes);
+            await this.timeUp(session);
         } finally {
             this.popups.close(session.id);
             removeAppSession(this.paths, session.id);
         }
     }
 
-    showPopup(session) {
+    async timeUp(session) {
+        const result = await applyTimeUp({
+            windows: this.windows, target: session.target, processes: session.processes, onTimeUp: session.onTimeUp,
+        });
+        if (result === 'minimized') void this.hold(session);
+    }
+
+    /** Keeps a minimized session's windows minimized while the same processes run. */
+    async hold(session) {
+        const identity = session.identity ?? targetIdentity(session.target);
+        if (this.holds.has(identity)) return;
+        const hold = { released: false };
+        this.holds.set(identity, hold);
+        this.onChange();
+        let lastMinimized = Date.now();
+        try {
+            while (!hold.released && sameSession(session.target, session.processes, runningProcesses(session.target))) {
+                const showing = this.windows.isShowing(session.target, session.processes);
+                if (showing === true || (showing === null && Date.now() - lastMinimized >= BLIND_MINIMIZE_MS)) {
+                    await this.windows.minimize(session.target, session.processes);
+                    lastMinimized = Date.now();
+                }
+                await sleep(CHECK_MS);
+            }
+        } finally {
+            if (this.holds.get(identity) === hold) this.holds.delete(identity);
+            this.onChange();
+        }
+    }
+
+    /** Stops holding a program minimized, because it was opened again through its launcher. */
+    release(identity) {
+        const hold = this.holds.get(identity);
+        if (!hold) return;
+        hold.released = true;
+        this.holds.delete(identity);
+    }
+
+    showCountdown(session) {
         this.popups.show(session.id, {
             name: session.name,
             deadline: session.deadline,
             totalSeconds: session.totalSeconds,
             appearance: this.appearance(),
+            action: session.onTimeUp,
         });
     }
 }

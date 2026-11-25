@@ -14,11 +14,12 @@ interface AppPausesSectionProps {
     apps: TimedApp[];
     timeouts: DesktopTimeouts;
     locked: boolean;
+    windowControl: boolean;
     onChanged: (message: string) => void;
     onError: (message: string) => void;
 }
 
-export function AppPausesSection({ apps, timeouts, locked, onChanged, onError }: AppPausesSectionProps) {
+export function AppPausesSection({ apps, timeouts, locked, windowControl, onChanged, onError }: AppPausesSectionProps) {
     const [query, setQuery] = useState('');
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const selected = apps.find(app => app.id === selectedId) ?? null;
@@ -81,7 +82,15 @@ export function AppPausesSection({ apps, timeouts, locked, onChanged, onError }:
                 </Box>
                 <Box sx={{ minWidth: 0 }}>
                     {selected ? (
-                        <AppPauseEditor key={selected.id} app={selected} timeouts={timeouts} locked={locked} onSaved={onChanged} onError={onError} />
+                        <AppPauseEditor
+                            key={selected.id}
+                            app={selected}
+                            timeouts={timeouts}
+                            locked={locked}
+                            windowControl={windowControl}
+                            onSaved={onChanged}
+                            onError={onError}
+                        />
                     ) : (
                         <Box sx={{ height: '100%', minHeight: 180, display: 'grid', placeItems: 'center', border: 1, borderStyle: 'dashed', borderColor: 'divider', borderRadius: 2, p: 3 }}>
                             <Typography color="text.secondary" textAlign="center">

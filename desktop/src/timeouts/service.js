@@ -2,13 +2,12 @@ const { dialog, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { timeoutPaths } = require('./core/paths');
-const { appSettings, urlSettings } = require('./core/config');
+const { appSettings, urlSettings, countdownDisplay } = require('./core/config');
 const { normalizeUrl } = require('./core/urls');
 const { Launchers, OWN_DESKTOP_IDS } = require('./core/launchers');
 const { installedLaunchers } = require('./core/installedApps');
 const { iconDataUrl } = require('./core/icons');
 const { launchOriginal, spawnDetached } = require('./core/launchOriginal');
-const { expireAppSession } = require('./core/appSessions');
 const { activeSession, expireBrowser, readSession, urlSecondsToday } = require('./core/browserSession');
 const { appUsageToday } = require('./core/appDailyLimits');
 const { EditLock } = require('./core/editLock');
@@ -17,6 +16,8 @@ const { installBrowserHost, refreshBrowserHost, isBrowserHostInstalled } = requi
 const { CountdownWindow, ClosingPopups, installCountdownIpc } = require('./windows');
 const { AppSessionMonitor, BrowserSessionMonitor } = require('./sessionMonitors');
 const { DailyLimitMonitor } = require('./dailyLimitMonitor');
+const { CountdownDisplay } = require('./countdownDisplay');
+const { WindowControl } = require('./windowControl');
 
 const MAX_DELAY_SECONDS = 86400;
 /** Backstop for launcher changes the folder watch misses (e.g. a package update in /usr/share). */
@@ -50,12 +51,16 @@ class TimeoutService {
         this.countdowns = new Map();
         this.iconCache = new Map();
         this.popups = new ClosingPopups();
+        this.countdownDisplay = new CountdownDisplay({ popups: this.popups, notify, mode: () => this.countdownDisplayMode() });
+        // A restored window of a used-up app is minimized again at once, not at the next check.
+        this.windows = new WindowControl({ stateDir: this.paths.stateDir, onChange: () => void this.dailyLimits.check() });
         const shared = {
             paths: this.paths,
-            popups: this.popups,
+            popups: this.countdownDisplay,
             notify,
             appearance: () => this.appearance(),
             onChange: () => this.onIdleChange(),
+            windows: this.windows,
         };
         this.appSessions = new AppSessionMonitor({ ...shared, command });
         this.browserSessions = new BrowserSessionMonitor(shared);
@@ -78,6 +83,8 @@ class TimeoutService {
             console.error('Could not refresh the Firefox native host:', error);
         }
         this.watchLaunchers();
+        // Window state arrives shortly after; until then all time counts, as before.
+        void this.windows.start();
         void this.appSessions.resume();
         this.browserSessions.start();
         this.dailyLimits.start();
@@ -109,6 +116,15 @@ class TimeoutService {
         this.launcherTimer.unref?.();
     }
 
+    countdownDisplayMode() {
+        try {
+            return this.launchers.load().countdownDisplay === 'notification' ? 'notification' : 'window';
+        } catch (error) {
+            console.error('Could not read how countdowns are shown:', error);
+            return 'window';
+        }
+    }
+
     appearance() {
         try {
             return this.launchers.load().appearance ?? null;
@@ -122,7 +138,7 @@ class TimeoutService {
         try {
             if (command.type === 'launch') await this.launch(command);
             else if (command.type === 'run') this.run(command);
-            else if (command.type === 'expire-app') await expireAppSession(this.paths, command.sessionId);
+            else if (command.type === 'expire-app') await this.appSessions.expire(command.sessionId);
             else if (command.type === 'expire-browser') await expireBrowser(this.paths, command.sessionId);
             else if (command.type === 'install-browser-host') installBrowserHost(this.paths, this.command);
             // 'watch' needs nothing more: start() already watches the Firefox session.
@@ -230,6 +246,8 @@ class TimeoutService {
                     dailyLimitSeconds: entry.dailyLimitSeconds ?? 0,
                     autoOpen: entry.autoOpen,
                     message: entry.message,
+                    countMinimized: entry.countMinimized !== false,
+                    onTimeUp: entry.onTimeUp ?? 'close',
                 },
                 usedTodaySeconds: entry?.dailyLimitSeconds ? this.appSecondsToday(entry) : 0,
             };
@@ -248,6 +266,9 @@ class TimeoutService {
             apps,
             urls,
             editLock: this.editLock.status(),
+            countdownDisplay: this.countdownDisplayMode(),
+            // Seeing minimized windows and minimizing apps needs KDE Plasma.
+            windowControl: this.windows.available,
             browser: {
                 hostInstalled: isBrowserHostInstalled(this.paths),
                 extensionDir: this.extensionDir,
@@ -303,6 +324,14 @@ class TimeoutService {
         const config = this.launchers.load();
         delete config.urls[url];
         this.launchers.save(config);
+    }
+
+    /** How time left is shown. Not a boundary, so it needs no password. */
+    setCountdownDisplay(value) {
+        const config = this.launchers.load();
+        config.countdownDisplay = countdownDisplay(value);
+        this.launchers.save(config);
+        this.countdownDisplay.modeChanged();
     }
 
     // ---- The password and wait before any boundary can change ----

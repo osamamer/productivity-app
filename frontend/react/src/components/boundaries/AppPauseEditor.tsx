@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Alert, Avatar, Box, Button, FormControlLabel, Switch, TextField, Typography } from '@mui/material';
+import {
+    Alert, Avatar, Box, Button, FormControlLabel, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography,
+} from '@mui/material';
 import LockClockRoundedIcon from '@mui/icons-material/LockClockRounded';
 import { AppNumberField } from '../input/AppNumberField';
-import type { DesktopTimeouts, TimedApp } from '../../services/desktop';
+import type { AppTimeUpAction, DesktopTimeouts, TimedApp } from '../../services/desktop';
 import { DEFAULT_PAUSE_MESSAGE, describeDailyLimit, parseWholeNumber } from './boundaryText';
 
 const LOCK_POLL_MS = 1000;
@@ -14,6 +16,8 @@ interface AppPauseEditorProps {
     app: TimedApp;
     timeouts: DesktopTimeouts;
     locked: boolean;
+    // KDE Plasma only: minimized windows can be seen, and apps minimized.
+    windowControl: boolean;
     onSaved: (message: string) => void;
     onError: (message: string) => void;
 }
@@ -38,13 +42,15 @@ function useLockReason(timeouts: DesktopTimeouts, appId: string) {
 }
 
 /** Pause and auto-close settings for one app (and every launcher alias of it). */
-export function AppPauseEditor({ app, timeouts, locked, onSaved, onError }: AppPauseEditorProps) {
+export function AppPauseEditor({ app, timeouts, locked, windowControl, onSaved, onError }: AppPauseEditorProps) {
     const settings = app.settings;
     const [delay, setDelay] = useState(String(settings?.delaySeconds ?? 30));
     const [autoOpen, setAutoOpen] = useState(settings?.autoOpen ?? true);
     const [message, setMessage] = useState(settings?.message ?? DEFAULT_PAUSE_MESSAGE);
     const [closeAfter, setCloseAfter] = useState(String(Math.round((settings?.closeAfterSeconds ?? 0) / 60)));
     const [daily, setDaily] = useState(String(Math.round((settings?.dailyLimitSeconds ?? 0) / 60)));
+    const [countMinimized, setCountMinimized] = useState(settings?.countMinimized ?? true);
+    const [onTimeUp, setOnTimeUp] = useState<AppTimeUpAction>(settings?.onTimeUp ?? 'close');
     const [busy, setBusy] = useState(false);
     const lockReason = useLockReason(timeouts, app.id);
 
@@ -54,6 +60,7 @@ export function AppPauseEditor({ app, timeouts, locked, onSaved, onError }: AppP
     const editable = !lockReason && !busy && !locked;
     const valid = delaySeconds !== null && closeAfterMinutes !== null && dailyMinutes !== null;
     const usedToday = describeDailyLimit(settings?.dailyLimitSeconds, app.usedTodaySeconds);
+    const timed = Boolean(closeAfterMinutes) || Boolean(dailyMinutes);
 
     const run = async (action: () => Promise<void>, done: string) => {
         setBusy(true);
@@ -71,7 +78,13 @@ export function AppPauseEditor({ app, timeouts, locked, onSaved, onError }: AppP
         if (delaySeconds === null || closeAfterMinutes === null || dailyMinutes === null) return;
         void run(
             () => timeouts.saveApp(app.id, {
-                delaySeconds, autoOpen, message, closeAfterSeconds: closeAfterMinutes * 60, dailyLimitSeconds: dailyMinutes * 60,
+                delaySeconds,
+                autoOpen,
+                message,
+                closeAfterSeconds: closeAfterMinutes * 60,
+                dailyLimitSeconds: dailyMinutes * 60,
+                countMinimized,
+                onTimeUp,
             }),
             `Saved the pause for ${app.name}.`,
         );
@@ -160,9 +173,20 @@ export function AppPauseEditor({ app, timeouts, locked, onSaved, onError }: AppP
                 sx={{ alignItems: 'flex-start', ml: 0, gap: 1, '& .MuiSwitch-root': { mt: -0.5 } }}
             />
 
-            {closeAfterMinutes !== null && closeAfterMinutes > 0 && (
+            {timed && (
+                <TimeUpOptions
+                    countMinimized={countMinimized}
+                    onTimeUp={onTimeUp}
+                    windowControl={windowControl}
+                    disabled={!editable}
+                    setCountMinimized={setCountMinimized}
+                    setOnTimeUp={setOnTimeUp}
+                />
+            )}
+
+            {timed && onTimeUp === 'close' && (
                 <Typography variant="caption" color="warning.main">
-                    Auto-close ends the app's session; unsaved work may be lost. A small window shows the time left.
+                    Closing ends the app's session; unsaved work may be lost.
                 </Typography>
             )}
 
@@ -187,6 +211,59 @@ export function AppPauseEditor({ app, timeouts, locked, onSaved, onError }: AppP
                 Applies to the app's launchers and their shortcuts. Apps that are already running, or started from a terminal, skip the pause.
                 The daily limit counts the time the app runs, however it was started, while Claritard is running.
             </Typography>
+        </Box>
+    );
+}
+
+interface TimeUpOptionsProps {
+    countMinimized: boolean;
+    onTimeUp: AppTimeUpAction;
+    windowControl: boolean;
+    disabled: boolean;
+    setCountMinimized: (value: boolean) => void;
+    setOnTimeUp: (value: AppTimeUpAction) => void;
+}
+
+/** How the app's time limits treat minimized windows, and what happens when time is up. */
+function TimeUpOptions({ countMinimized, onTimeUp, windowControl, disabled, setCountMinimized, setOnTimeUp }: TimeUpOptionsProps) {
+    return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            <FormControlLabel
+                control={<Switch checked={countMinimized} disabled={disabled} onChange={event => setCountMinimized(event.target.checked)} />}
+                label={
+                    <Box>
+                        <Typography variant="body2" fontWeight={600}>Count time while minimized</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                            Off: the time limits pause while every window of the app is minimized or hidden to the tray.
+                        </Typography>
+                    </Box>
+                }
+                sx={{ alignItems: 'flex-start', ml: 0, gap: 1, '& .MuiSwitch-root': { mt: -0.5 } }}
+            />
+            <Box>
+                <Typography variant="body2" fontWeight={600} sx={{ mb: 0.75 }}>When time is up</Typography>
+                <ToggleButtonGroup
+                    exclusive
+                    size="small"
+                    value={onTimeUp}
+                    disabled={disabled}
+                    onChange={(_, value: AppTimeUpAction | null) => { if (value) setOnTimeUp(value); }}
+                    aria-label="When time is up"
+                >
+                    <ToggleButton value="close" sx={{ textTransform: 'none', px: 2 }}>Quit the app</ToggleButton>
+                    <ToggleButton value="minimize" sx={{ textTransform: 'none', px: 2 }}>Minimize it</ToggleButton>
+                </ToggleButtonGroup>
+                <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 0.75 }}>
+                    {onTimeUp === 'minimize'
+                        ? 'It keeps running, minimized again whenever it is restored, until it is closed or opened again through its pause.'
+                        : 'Its windows close, along with anything it plays.'}
+                </Typography>
+            </Box>
+            {!windowControl && (!countMinimized || onTimeUp === 'minimize') && (
+                <Alert severity="info" sx={{ borderRadius: 2 }}>
+                    Seeing minimized windows and minimizing apps needs KDE Plasma. Here, all time counts and the app is quit.
+                </Alert>
+            )}
         </Box>
     );
 }

@@ -6,14 +6,17 @@ const MAX_DELAY_SECONDS = 86400;
 const MAX_CLOSE_AFTER_SECONDS = 86400;
 const MAX_DAILY_LIMIT_SECONDS = 86400;
 const DEFAULT_MESSAGE = 'Take a breath.';
+const TIME_UP_ACTIONS = ['close', 'minimize'];
+const COUNTDOWN_DISPLAYS = ['window', 'notification'];
 
 /**
  * `apps` maps a desktop ID (e.g. `firefox.desktop`) to its delay settings and the backup of its
  * original launcher. `urls` maps a normalized URL to its Firefox timer. `appearance` is the last
  * theme the web app reported, so countdown windows match it even when the app is not open.
+ * `countdownDisplay` is how time left is shown: a small window, or system notifications.
  */
 function emptyConfig() {
-    return { apps: {}, urls: {}, appearance: null };
+    return { apps: {}, urls: {}, appearance: null, countdownDisplay: 'window' };
 }
 
 function loadConfig(file) {
@@ -65,7 +68,22 @@ function appSettings(input) {
         dailyLimitSeconds: dailyLimit(input),
         autoOpen: input?.autoOpen !== false,
         message: typeof input?.message === 'string' ? input.message.slice(0, 300) : DEFAULT_MESSAGE,
+        // Off: auto-close and daily limits pause while every window of the app is minimized.
+        countMinimized: input?.countMinimized !== false,
+        onTimeUp: timeUpAction(input?.onTimeUp),
     };
+}
+
+/** What happens to an app when its time is up: closed (the default) or minimized. */
+function timeUpAction(value) {
+    if (value === undefined || value === null) return 'close';
+    if (!TIME_UP_ACTIONS.includes(value)) throw new Error('When time is up, the app must be closed or minimized.');
+    return value;
+}
+
+function countdownDisplay(value) {
+    if (!COUNTDOWN_DISPLAYS.includes(value)) throw new Error('Time left is shown in a window or as notifications.');
+    return value;
 }
 
 /** Validates what the settings page sends for a URL timer. Firefox always closes afterwards. */
@@ -78,4 +96,6 @@ function urlSettings(input) {
     };
 }
 
-module.exports = { DEFAULT_MESSAGE, emptyConfig, loadConfig, saveConfig, appSettings, urlSettings };
+module.exports = {
+    DEFAULT_MESSAGE, emptyConfig, loadConfig, saveConfig, appSettings, urlSettings, timeUpAction, countdownDisplay,
+};

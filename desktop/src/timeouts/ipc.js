@@ -19,6 +19,7 @@ function registerTimeoutIpc({ timeouts, isMainAppPage }) {
         installBrowserHost: () => timeouts.installBrowserHost(),
         openExtensionFolder: () => timeouts.openExtensionFolder(),
         setAppearance: appearance => timeouts.setAppearance(appearance),
+        setCountdownDisplay: value => timeouts.setCountdownDisplay(String(value)),
     };
     for (const [name, handler] of Object.entries(handlers)) {
         ipcMain.handle(`timeouts:${name}`, async (event, ...args) => {

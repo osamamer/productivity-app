@@ -18,7 +18,17 @@ export interface AppPauseSettings {
     // Open as soon as the countdown ends, instead of waiting for an Open click.
     autoOpen: boolean;
     message: string;
+    // False: auto-close and the daily limit pause while every window of the app is minimized.
+    // Absent in desktop builds that predate it, which always count.
+    countMinimized?: boolean;
+    // What happens when time is up; absent in older builds, which always close.
+    onTimeUp?: AppTimeUpAction;
 }
+
+export type AppTimeUpAction = 'close' | 'minimize';
+
+// How the time left before an app closes is shown.
+export type CountdownDisplay = 'window' | 'notification';
 
 export interface TimedApp {
     // The desktop ID that represents every launcher alias of the app.
@@ -55,6 +65,10 @@ export interface TimeoutState {
     urls: SiteTimer[];
     // Absent in desktop builds that predate the Boundaries password.
     editLock?: BoundaryEditStatus;
+    // Absent in desktop builds that predate the choice, which always show a window.
+    countdownDisplay?: CountdownDisplay;
+    // Whether minimized windows can be seen and apps minimized (KDE Plasma only).
+    windowControl?: boolean;
     browser: {
         hostInstalled: boolean;
         extensionDir: string;
@@ -93,6 +107,8 @@ export interface DesktopTimeouts {
     installBrowserHost: () => Promise<void>;
     openExtensionFolder: () => Promise<void>;
     setAppearance: (appearance: TimeoutAppearance) => Promise<void>;
+    // Absent in desktop builds that predate the choice. Needs no password.
+    setCountdownDisplay?: (display: CountdownDisplay) => Promise<void>;
 }
 
 export interface UsageSegment {

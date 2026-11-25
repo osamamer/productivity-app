@@ -1,7 +1,6 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { runningProcesses, sameSession, endSession } = require('./processes');
 
 /**
  * A timed app session: `{ id, name, target, processes, deadline }` (deadline in epoch ms).
@@ -57,17 +56,6 @@ function liveAppSession(paths, identity, now = Date.now()) {
         (session.identity ?? targetIdentity(session.target)) === identity && session.deadline > now) ?? null;
 }
 
-/** Ends session `id` if its time is up and its processes still run; used by the backstop timer. */
-async function expireAppSession(paths, id) {
-    const session = readAppSession(paths, id);
-    if (!session || session.deadline > Date.now()) return false;
-    if (sameSession(session.target, session.processes, runningProcesses(session.target))) {
-        await endSession(session.target, session.processes);
-    }
-    removeAppSession(paths, id);
-    return true;
-}
-
 module.exports = {
-    targetIdentity, saveAppSession, readAppSession, listAppSessions, removeAppSession, liveAppSession, expireAppSession,
+    targetIdentity, saveAppSession, readAppSession, listAppSessions, removeAppSession, liveAppSession,
 };

@@ -120,7 +120,7 @@ class ClosingPopups {
         this.popups = new Map();
     }
 
-    show(key, { name, deadline, totalSeconds, appearance }) {
+    show(key, { name, deadline, totalSeconds, appearance, action = 'close' }) {
         if (this.popups.has(key)) return;
         const popup = new BrowserWindow({
             ...POPUP_SIZE,
@@ -135,7 +135,7 @@ class ClosingPopups {
             alwaysOnTop: true,
             show: false,
             type: 'notification',
-            title: `${name} closes soon`,
+            title: `${name} ${action === 'minimize' ? 'minimizes' : 'closes'} soon`,
             backgroundColor: appearance?.paper ?? '#26292d',
             webPreferences: windowPreferences,
         });
@@ -149,7 +149,7 @@ class ClosingPopups {
         this.popups.set(key, popup);
         this.layout();
         void popup.loadFile(path.join(UI_DIR, 'timeout-closing.html'), {
-            query: { name, deadline: String(deadline), total: String(totalSeconds), theme: themeQuery(appearance) },
+            query: { name, deadline: String(deadline), total: String(totalSeconds), action, theme: themeQuery(appearance) },
         });
     }
 
@@ -173,6 +173,10 @@ class ClosingPopups {
     close(key) {
         const popup = this.popups.get(key);
         if (popup && !popup.isDestroyed()) popup.close();
+    }
+
+    closeAll() {
+        for (const key of [...this.popups.keys()]) this.close(key);
     }
 }
 

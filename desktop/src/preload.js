@@ -57,6 +57,7 @@ function timeoutsBridge() {
         installBrowserHost: call('installBrowserHost'),
         openExtensionFolder: call('openExtensionFolder'),
         setAppearance: call('setAppearance'),
+        setCountdownDisplay: call('setCountdownDisplay'),
     };
 }
 

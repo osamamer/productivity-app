@@ -4,6 +4,7 @@ import { Navigate } from 'react-router-dom';
 import { AppPausesSection } from '../components/boundaries/AppPausesSection';
 import { SiteTimersSection } from '../components/boundaries/SiteTimersSection';
 import { BoundaryEditLockCard } from '../components/boundaries/BoundaryEditLockCard';
+import { CountdownDisplaySection } from '../components/boundaries/CountdownDisplaySection';
 import { useBoundaryEditLock } from '../components/boundaries/useBoundaryEditLock';
 import { desktopTimeouts, type DesktopTimeouts, type TimeoutState } from '../services/desktop';
 
@@ -60,8 +61,23 @@ function Boundaries({ timeouts }: { timeouts: DesktopTimeouts }) {
             {state && (
                 <Box sx={{ display: 'grid', gap: 3 }}>
                     <BoundaryEditLockCard lock={editLock} onError={onError} />
-                    <AppPausesSection apps={state.apps} timeouts={timeouts} locked={locked} onChanged={onChanged} onError={onError} />
+                    <AppPausesSection
+                        apps={state.apps}
+                        timeouts={timeouts}
+                        locked={locked}
+                        windowControl={state.windowControl ?? false}
+                        onChanged={onChanged}
+                        onError={onError}
+                    />
                     <SiteTimersSection urls={state.urls} browser={state.browser} timeouts={timeouts} locked={locked} onChanged={onChanged} onError={onError} />
+                    {timeouts.setCountdownDisplay && (
+                        <CountdownDisplaySection
+                            display={state.countdownDisplay ?? 'window'}
+                            setDisplay={timeouts.setCountdownDisplay}
+                            onChanged={onChanged}
+                            onError={onError}
+                        />
+                    )}
                 </Box>
             )}
 

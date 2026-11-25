@@ -3,13 +3,14 @@ const params = new URLSearchParams(location.search);
 const appName = params.get('name') || 'App';
 const deadline = Number(params.get('deadline')) || Date.now();
 const total = Math.max(1, Number(params.get('total')) || 1);
+const verb = params.get('action') === 'minimize' ? 'minimizes' : 'closes';
 const URGENT_SECONDS = 60;
 
 const container = document.getElementById('closing');
 const time = document.getElementById('time');
 const fill = document.getElementById('fill');
-document.getElementById('name').textContent = `${appName} closes in`;
-document.title = `${appName} closes soon`;
+document.getElementById('name').textContent = `${appName} ${verb} in`;
+document.title = `${appName} ${verb} soon`;
 
 function tick() {
     const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
