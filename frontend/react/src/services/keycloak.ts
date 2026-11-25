@@ -1,6 +1,7 @@
 import Keycloak, { type KeycloakTokenParsed } from 'keycloak-js';
 import { isLocalDesktopMode, localDesktopToken } from './desktop';
 import { isInvalidGrantResponse, isRejectedRefreshError } from './auth/authFailures';
+import { type RefreshedTokens, requestTokenRefresh } from './auth/tokenRefresh';
 
 // The app-owned password form needs to restore its refresh session after a browser restart.
 // The values remain readable by JavaScript; moving the refresh token to an HttpOnly cookie
@@ -52,6 +53,8 @@ const keycloak = new Keycloak({
     realm,
     clientId,
 });
+
+const tokenEndpoint = () => `${keycloakUrl}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/token`;
 
 function decodeTokenPayload(token: string): KeycloakTokenParsed {
     const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
@@ -190,26 +193,44 @@ export function isAccessTokenUsable(nowMs = Date.now()): boolean {
     return typeof expiresAt === 'number' && expiresAt * 1000 > nowMs;
 }
 
-function currentSession(): Partial<AuthSession> {
-    return { token: keycloak.token, refreshToken: keycloak.refreshToken, idToken: keycloak.idToken };
-}
-
 const wait = (milliseconds: number) => new Promise<void>(resolve => {
     window.setTimeout(resolve, milliseconds);
 });
+
+// Mirrors what keycloak-js does with a refresh response, including its clock-skew estimate.
+// It does not reschedule keycloak-js's onTokenExpired timer; the minute-by-minute refresh in
+// main.tsx renews the token before it expires.
+function applyRefreshedTokens(tokens: RefreshedTokens, timeLocalMs: number): void {
+    restoreAuthSession({ token: tokens.access_token, refreshToken: tokens.refresh_token, idToken: tokens.id_token });
+    if (!tokens.id_token) {
+        delete keycloak.idToken;
+        delete keycloak.idTokenParsed;
+    }
+    const issuedAt = keycloak.tokenParsed?.iat;
+    if (typeof issuedAt === 'number') keycloak.timeSkew = Math.floor(timeLocalMs / 1000) - issuedAt;
+}
+
+/** keycloak.updateToken with a timeout; see tokenRefresh.ts for why it does not call keycloak-js. */
+async function updateToken(minValidity: number): Promise<boolean> {
+    if (!keycloak.refreshToken) throw new Error('Unable to update token, no refresh token available.');
+    if (!keycloak.isTokenExpired(minValidity)) return false;
+
+    const startedAt = Date.now();
+    const tokens = await requestTokenRefresh(tokenEndpoint(), keycloak.refreshToken, clientId);
+    applyRefreshedTokens(tokens, (startedAt + Date.now()) / 2);
+    return true;
+}
 
 async function refreshWithRetry(minValidity: number): Promise<boolean> {
     let lastError: unknown;
 
     for (let attempt = 0; attempt <= REFRESH_RETRY_DELAYS_MS.length; attempt += 1) {
-        const sessionBeforeRefresh = currentSession();
         try {
-            const refreshed = await keycloak.updateToken(minValidity);
+            const refreshed = await updateToken(minValidity);
             persistAuthSession();
             return refreshed;
         } catch (error) {
             if (await isRejectedRefreshError(error)) throw new SessionRejectedError(error);
-            if (!keycloak.refreshToken) restoreAuthSession(sessionBeforeRefresh);
             lastError = error;
             if (isDefinitiveRefreshFailure(error) || attempt === REFRESH_RETRY_DELAYS_MS.length) {
                 throw error;
@@ -259,7 +280,7 @@ export async function authenticateWithPassword(username: string, password: strin
     // redirect-based identity features such as social providers or most MFA flows.
     let response: Response;
     try {
-        response = await fetch(`${keycloakUrl}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/token`, {
+        response = await fetch(tokenEndpoint(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({

@@ -9,15 +9,19 @@ import { createServer } from 'vite';
 let viteServer;
 let auth;
 let failures;
+let tokenRefresh;
 const originalFetch = globalThis.fetch;
 const originalWindow = globalThis.window;
 const storage = new Map();
+const sessionValues = new Map();
 
-const memoryStorage = {
-  getItem: key => storage.get(key) ?? null,
-  setItem: (key, value) => storage.set(key, value),
-  removeItem: key => storage.delete(key),
-};
+const inMemory = values => ({
+  getItem: key => values.get(key) ?? null,
+  setItem: (key, value) => values.set(key, value),
+  removeItem: key => values.delete(key),
+});
+const memoryStorage = inMemory(storage);
+const sessionMemoryStorage = inMemory(sessionValues);
 
 function jwt(payload) {
   const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -44,13 +48,13 @@ const rejected = () => respondWith(400, { error: 'invalid_grant', error_descript
 before(async () => {
   globalThis.window = {
     localStorage: memoryStorage,
-    sessionStorage: memoryStorage,
+    sessionStorage: sessionMemoryStorage,
     location: { pathname: '/', replace: () => {} },
     setTimeout: (callback, ms) => setTimeout(callback, ms),
     clearTimeout: handle => clearTimeout(handle),
   };
   globalThis.localStorage = memoryStorage;
-  globalThis.sessionStorage = memoryStorage;
+  globalThis.sessionStorage = sessionMemoryStorage;
   viteServer = await createServer({
     configFile: false,
     root: process.cwd(),
@@ -60,12 +64,12 @@ before(async () => {
   });
   auth = await viteServer.ssrLoadModule('/src/services/keycloak.ts');
   failures = await viteServer.ssrLoadModule('/src/services/auth/authFailures.ts');
-  // keycloak-js derives its endpoints during init(); give it the realm endpoints directly.
-  auth.default.endpoints = { token: () => 'https://auth.test/realms/app/protocol/openid-connect/token' };
+  tokenRefresh = await viteServer.ssrLoadModule('/src/services/auth/tokenRefresh.ts');
 });
 
 beforeEach(() => {
   storage.clear();
+  sessionValues.clear();
   auth.restoreAuthSession({ token: expiredAccessToken, refreshToken });
   auth.default.timeSkew = 0;
 });
@@ -95,7 +99,7 @@ test('a refresh during an identity-server outage keeps the session for a later r
 
   assert.ok(error, 'the refresh still reports the failure');
   assert.equal(auth.isDefinitiveRefreshFailure(error), false);
-  assert.equal(auth.default.refreshToken, refreshToken, 'keycloak-js cleared the token; it must be restored');
+  assert.equal(auth.default.refreshToken, refreshToken, 'the session survives the outage');
   assert.equal(auth.default.authenticated, true);
 });
 
@@ -120,4 +124,34 @@ test('sign-in reports wrong credentials only when Keycloak rejects them', async 
 
   globalThis.fetch = async () => { throw new TypeError('fetch failed'); };
   await assert.rejects(auth.authenticateWithPassword('me', 'right'), { message: auth.SIGN_IN_UNAVAILABLE });
+});
+
+test('a successful refresh replaces and saves the session', async () => {
+  const freshAccessToken = jwt({ sub: 'user-1', iat: nowSeconds(), exp: nowSeconds() + 300 });
+  const freshRefreshToken = jwt({ sub: 'user-1', typ: 'Refresh', exp: nowSeconds() + 90_000 });
+  respondWith(200, { access_token: freshAccessToken, refresh_token: freshRefreshToken });
+
+  assert.equal(await auth.refreshAuthToken(30), true);
+
+  assert.equal(auth.default.token, freshAccessToken);
+  assert.equal(auth.default.refreshToken, freshRefreshToken);
+  assert.equal(auth.default.isTokenExpired(30), false);
+  assert.equal(JSON.parse(storage.get(auth.AUTH_SESSION_STORAGE_KEY)).token, freshAccessToken);
+});
+
+test('a token request on a dead connection gives up instead of hanging', async () => {
+  // A dropped connection never answers; only the abort signal can end the request. Node does
+  // not keep the process alive for AbortSignal.timeout, so the fake connection does.
+  globalThis.fetch = (_url, init) => new Promise((_resolve, reject) => {
+    const openConnection = setTimeout(() => {}, 60_000);
+    init.signal.addEventListener('abort', () => {
+      clearTimeout(openConnection);
+      reject(init.signal.reason);
+    });
+  });
+
+  await assert.rejects(
+    tokenRefresh.requestTokenRefresh('https://auth.test/token', refreshToken, 'app', 20),
+    { name: 'TimeoutError' },
+  );
 });

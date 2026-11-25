@@ -59,7 +59,12 @@ apiClient.interceptors.request.use(async (config) => {
     return config;
 });
 
-setServerProbe(() => apiClient.get('/actuator/health'));
+const PROBE_TIMEOUT_MS = 5_000;
+
+// The health endpoint is public, so the probe skips apiClient: waiting for a token refresh that
+// is itself stuck would keep the "could not be refreshed" bar up while the server answers.
+setServerProbe(() => axios.get(`${API_BASE_URL}/actuator/health`, { timeout: PROBE_TIMEOUT_MS })
+    .then(() => reportServerAvailability(true)));
 
 apiClient.interceptors.response.use(
     (response) => { reportServerAvailability(true); return response; },
