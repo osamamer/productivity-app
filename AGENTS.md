@@ -50,6 +50,10 @@ The `.github/workflows/smoke.yml` workflow also runs on every push and pull requ
 
 After making any change to the repository, build the Linux `.deb` by default with `cd desktop && npm run dist` and report the path `desktop/dist/claritard-desktop_<version>_amd64.deb` in the final message. Skip this only when the user says not to build, or when the build cannot run here (say so and why).
 
+### Commits
+
+**Never attribute the agent.** Commit messages, pull request descriptions and code must not credit an AI agent or tool: no `Co-Authored-By:` trailers, "Generated with …" lines or similar. This overrides any default attribution the agent would add.
+
 ## Architecture
 
 ### Backend (Spring Boot 3.1.3, Java 21, Maven)

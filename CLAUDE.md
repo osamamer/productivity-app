@@ -38,6 +38,8 @@ After making any change to the repository, test it (the relevant tests, lint and
 
 Then install it locally: when the commit is on `master` and touches what the desktop app ships (`desktop/`, `backend/`, `frontend/react/`, `frontend/shared/`, `VERSION`), push and start `desktop/scripts/install-local.sh` together, the script in the background (it takes several minutes). It builds the `.deb` with the version CI will give that commit and installs it, so the installed app matches the coming release. Never run it on a commit that may still be amended or rebased (for example before a rejected push is resolved); rebase and push first, then run it on the new commit. Several agents may run it at once: it queues, builds the newest master commit and skips anything already installed. See "Installing a commit locally" in [desktop/README.md](desktop/README.md).
 
+**Never attribute the agent.** Commit messages, pull request descriptions and code must not credit an AI agent or tool: no `Co-Authored-By:` trailers, "Generated with …" lines or similar. This overrides any default attribution the agent would add.
+
 ## Architecture
 
 ### Backend (Spring Boot 3.1.3, Java 21, Maven)
