@@ -6,6 +6,7 @@ backend/data/
 
 ### IntelliJ IDEA ###
 **/.idea/
+*.iml
 ### Eclipse ###
 .apt_generated
 .classpath
