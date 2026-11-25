@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.text.TextUtils
 import android.util.Base64
@@ -162,6 +163,26 @@ class BoundariesModule : Module() {
         AsyncFunction("enableAccessibilityViaShizuku") { promise: Promise ->
             val component = ComponentName(context, BoundariesAccessibilityService::class.java)
             ShizukuBridge.enableAccessibilityService(component.flattenToString()) { ok -> promise.resolve(ok) }
+        }
+
+        // ---- Media control (optional: pauses a timed-out app's own audio) ----
+
+        AsyncFunction("isMediaControlAllowed") { BoundariesMediaListener.isAllowed(context) }
+
+        AsyncFunction("openMediaControlSettings") {
+            val component = BoundariesMediaListener.component(context)
+            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
+                    .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, component.flattenToString())
+            } else {
+                Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+            }
+            startActivityPreferringCurrentActivity(intent)
+        }
+
+        AsyncFunction("allowMediaControlViaShizuku") { promise: Promise ->
+            val component = BoundariesMediaListener.component(context)
+            ShizukuBridge.allowNotificationListener(component.flattenToString()) { ok -> promise.resolve(ok) }
         }
 
         // ---- Device admin ----

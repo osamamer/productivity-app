@@ -144,6 +144,12 @@ object UsageTracker {
     private fun isUnlocked(u: AppUsage, rule: AppRule, now: Long): Boolean =
         u.sessionActive && sessionLeftMs(u, rule, now) > 0
 
+    @Synchronized
+    fun isUnlocked(context: Context, rule: AppRule, now: Long): Boolean {
+        ensureLoaded(context, now)
+        return apps[rule.pkg]?.let { isUnlocked(it, rule, now) } ?: false
+    }
+
     private fun dailyUsedUp(u: AppUsage, rule: AppRule): Boolean =
         rule.dailyLimitMin > 0 && u.usedMs >= rule.dailyLimitMin * 60_000L
 

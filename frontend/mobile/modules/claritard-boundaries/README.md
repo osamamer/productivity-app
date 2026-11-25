@@ -27,6 +27,13 @@ Autolinked as a local Expo module; there is no iOS or web implementation (`Bound
   by the UI with `isLooser` in `src/lib/boundaryRules.ts`). The unlock password opens the screens
   and pauses enforcement for five minutes (`AutoResumeReceiver` resumes it). Every password the
   screens ask for is followed by a ten second wait before it takes effect (`usePasswordWait`).
+- `AppStopper` is how every kick and expiry shuts an app down: `MediaStopper` stops its audio first,
+  then it is force-stopped. Without Shizuku nothing else can stop a music player's foreground
+  service (since Android 14 `killBackgroundProcesses` cannot touch other apps at all). With the
+  optional "media control" (notification access for `BoundariesMediaListener`, grantable through
+  Shizuku too) only that app's media sessions are paused and stopped, and they are stopped again
+  each tick if they start playing before the app is unlocked again. Without it, whatever is playing
+  is paused with a pause media key and a moment of audio focus, which may pause an allowed app too.
 - `ShizukuBridge` + `BoundariesShellService` optionally force-stop blocked apps with adb-shell
   privilege, including their background audio services. Stop requests made while Shizuku is
   binding are retried briefly. Without Shizuku permission, Android only permits a best-effort

@@ -5,7 +5,8 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.util.Log
+import android.os.Handler
+import android.os.Looper
 
 /** Wakes enforcement for a timed open even when its app is playing audio behind a locked screen. */
 object SessionExpiryScheduler {
@@ -42,14 +43,13 @@ class SessionExpiryReceiver : BroadcastReceiver() {
         if (expired.isEmpty()) return
 
         ShizukuBridge.initialize(context)
-        for (pkg in expired) {
-            try {
-                val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-                manager.killBackgroundProcesses(pkg)
-            } catch (e: Exception) {
-                Log.w("SessionExpiryReceiver", "Could not stop background process $pkg", e)
-            }
-            ShizukuBridge.forceStopPackage(pkg)
-        }
+        for (pkg in expired) AppStopper.stop(context, pkg)
+        // Keep the process awake while Shizuku binds and the stop requests go out.
+        val pending = goAsync()
+        Handler(Looper.getMainLooper()).postDelayed({ pending.finish() }, STOP_GRACE_MS)
+    }
+
+    private companion object {
+        const val STOP_GRACE_MS = 5_000L
     }
 }

@@ -2,7 +2,6 @@ package org.osama.solife.boundaries
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
-import android.app.ActivityManager
 import android.app.KeyguardManager
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
@@ -152,11 +151,11 @@ class BoundariesAccessibilityService : AccessibilityService() {
                 kick(pkg, "${labelFor(pkg)}: time's up for this open")
             } else {
                 // A music app may still be streaming from a foreground service after its screen
-                // disappears. HOME cannot stop that service; force-stop the package itself.
-                killBackgroundProcess(pkg)
-                ShizukuBridge.forceStopPackage(pkg)
+                // disappears; HOME cannot stop that, so stop its audio and the package itself.
+                AppStopper.stop(applicationContext, pkg)
             }
         }
+        AppStopper.silenceStragglers(applicationContext, now, rules)
     }
 
     /**
@@ -286,22 +285,8 @@ class BoundariesAccessibilityService : AccessibilityService() {
         if (delayOverlay.pkg == packageName) delayOverlay.forget()
         UsageTracker.endSession(applicationContext, packageName, now)
         if (message != null && !alreadyKicked) toast(message)
-
-        // Best-effort fallback for when Shizuku isn't set up: GLOBAL_ACTION_HOME alone leaves
-        // the process running, so at least try to reap it as a background process.
-        killBackgroundProcess(packageName)
-
-        // The real fix, when available: force-stop via Shizuku (adb-shell privilege).
-        ShizukuBridge.forceStopPackage(packageName)
-    }
-
-    private fun killBackgroundProcess(packageName: String) {
-        try {
-            val manager = applicationContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            manager.killBackgroundProcesses(packageName)
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not stop background process $packageName", e)
-        }
+        // HOME leaves the process (and any audio it plays) running.
+        AppStopper.stop(applicationContext, packageName)
     }
 
     override fun onDestroy() {

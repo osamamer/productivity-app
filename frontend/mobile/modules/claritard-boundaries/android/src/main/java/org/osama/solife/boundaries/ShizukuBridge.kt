@@ -67,7 +67,7 @@ object ShizukuBridge {
             .daemon(false)
             .processNameSuffix("boundaries_shell")
             .debuggable(false)
-            .version(2) // Bump whenever the AIDL changes so Shizuku restarts a stale service.
+            .version(3) // Bump whenever the AIDL changes so Shizuku restarts a stale service.
     }
 
     private val connection = object : ServiceConnection {
@@ -197,7 +197,14 @@ object ShizukuBridge {
      * background executor and reports back through [onResult] (true = enabled), so the caller
      * never blocks. Binds the user service first if needed, waiting a few seconds at most.
      */
-    fun enableAccessibilityService(flattenedComponent: String, onResult: (Boolean) -> Unit) {
+    fun enableAccessibilityService(flattenedComponent: String, onResult: (Boolean) -> Unit) =
+        withBoundService(onResult) { it.enableAccessibilityService(flattenedComponent) }
+
+    /** Allows the media listener, reporting through [onResult] like [enableAccessibilityService]. */
+    fun allowNotificationListener(flattenedComponent: String, onResult: (Boolean) -> Unit) =
+        withBoundService(onResult) { it.allowNotificationListener(flattenedComponent) }
+
+    private fun withBoundService(onResult: (Boolean) -> Unit, call: (IBoundariesShellService) -> Boolean) {
         ioExecutor.execute {
             val ok = try {
                 if (!isPermissionGrantedBlocking()) {
@@ -210,10 +217,10 @@ object ShizukuBridge {
                         Thread.sleep(100)
                         service = userService
                     }
-                    service?.enableAccessibilityService(flattenedComponent) ?: false
+                    service?.let(call) ?: false
                 }
             } catch (e: Throwable) {
-                Log.d(TAG, "enableAccessibilityService failed", e)
+                Log.d(TAG, "Shizuku shell call failed", e)
                 userService = null
                 false
             }

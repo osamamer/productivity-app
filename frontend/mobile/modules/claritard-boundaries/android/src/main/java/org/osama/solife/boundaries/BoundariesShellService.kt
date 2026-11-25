@@ -54,6 +54,19 @@ class BoundariesShellService : IBoundariesShellService.Stub() {
         }
     }
 
+    /** Like [enableAccessibilityService], it sidesteps the "Restricted setting" block. */
+    override fun allowNotificationListener(flattenedComponent: String): Boolean {
+        return try {
+            val exitCode = Runtime.getRuntime()
+                .exec(arrayOf("cmd", "notification", "allow_listener", flattenedComponent))
+                .waitFor()
+            exitCode == 0
+        } catch (e: Exception) {
+            Log.w("BoundariesShell", "Could not allow notification listener", e)
+            false
+        }
+    }
+
     private fun runForOutput(vararg cmd: String): String {
         val process = Runtime.getRuntime().exec(cmd)
         val out = process.inputStream.bufferedReader().readText().trim()

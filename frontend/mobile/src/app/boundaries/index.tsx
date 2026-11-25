@@ -20,6 +20,7 @@ interface Status {
   deviceAdmin: boolean;
   shizukuRunning: boolean;
   shizukuGranted: boolean;
+  mediaControl: boolean;
 }
 
 function formatCountdown(ms: number): string {
@@ -29,15 +30,18 @@ function formatCountdown(ms: number): string {
 
 async function loadStatus(): Promise<Status | null> {
   if (!Boundaries) return null;
-  const [enforcement, rules, accessibility, deviceAdmin, shizukuRunning, shizukuGranted] = await Promise.all([
+  const [enforcement, rules, accessibility, deviceAdmin, shizukuRunning, shizukuGranted, mediaControl] = await Promise.all([
     Boundaries.getEnforcementState(),
     Boundaries.getRules(),
     Boundaries.isAccessibilityServiceEnabled(),
     Boundaries.isDeviceAdminActive(),
     Boundaries.isShizukuRunning(),
     Boundaries.isShizukuPermissionGranted(),
+    Boundaries.isMediaControlAllowed(),
   ]);
-  return { enforcement, ruleCount: (JSON.parse(rules) as unknown[]).length, accessibility, deviceAdmin, shizukuRunning, shizukuGranted };
+  return {
+    enforcement, ruleCount: (JSON.parse(rules) as unknown[]).length, accessibility, deviceAdmin, shizukuRunning, shizukuGranted, mediaControl,
+  };
 }
 
 export default function BoundariesHome() {
@@ -47,6 +51,7 @@ export default function BoundariesHome() {
   const [now, setNow] = useState(() => Date.now());
   const [prompt, setPrompt] = useState<'pause' | 'master' | null>(null);
   const [enablingViaShizuku, setEnablingViaShizuku] = useState(false);
+  const [allowingMediaViaShizuku, setAllowingMediaViaShizuku] = useState(false);
 
   const refresh = useCallback(() => {
     loadStatus().then(setStatus).catch(cause => console.error('Could not load Boundaries status:', cause));
@@ -89,6 +94,18 @@ export default function BoundariesHome() {
   const turnOn = async () => {
     await Boundaries?.enable();
     refresh();
+  };
+
+  const allowMediaViaShizuku = async () => {
+    setAllowingMediaViaShizuku(true);
+    try {
+      if (!(await Boundaries?.allowMediaControlViaShizuku())) {
+        await popup.showError("Couldn't allow it with Shizuku", 'Make sure Shizuku is running and Claritard is allowed in it, then try again.');
+      }
+    } finally {
+      setAllowingMediaViaShizuku(false);
+      refresh();
+    }
   };
 
   const enableViaShizuku = async () => {
@@ -169,6 +186,22 @@ export default function BoundariesHome() {
 
       <AppText variant="label" color="muted" style={styles.section}>Optional</AppText>
       <SettingRow
+        icon="musical-notes-outline"
+        title="Stop music when time runs out"
+        tone={status?.mediaControl ? 'good' : 'default'}
+        subtitle={status?.mediaControl
+          ? 'Allowed — a timed-out app\'s audio is stopped, and stopped again if it restarts'
+          : 'Not allowed — whatever is playing is paused when an app runs out of time'}
+        trailing={status && !status.mediaControl ? (
+          <View style={styles.buttons}>
+            {status.shizukuGranted && (
+              <AppButton compact label="Via Shizuku" loading={allowingMediaViaShizuku} onPress={() => void allowMediaViaShizuku()} />
+            )}
+            <AppButton compact variant="secondary" label="Allow" onPress={() => void Boundaries?.openMediaControlSettings()} />
+          </View>
+        ) : undefined}
+      />
+      <SettingRow
         icon="flash-outline"
         title="Force-close with Shizuku"
         tone={status?.shizukuGranted ? 'good' : 'default'}
@@ -176,7 +209,7 @@ export default function BoundariesHome() {
           ? 'Shizuku isn\'t running — install it and start its service (again after every reboot)'
           : status.shizukuGranted
             ? 'Allowed — apps are force-closed when blocked or out of time'
-            : 'Not allowed — apps are only sent to the home screen, not closed'}
+            : 'Not allowed — apps are sent home and their audio stopped, but not closed'}
         trailing={status?.shizukuRunning && !status.shizukuGranted
           ? <AppButton compact label="Allow" onPress={() => void Boundaries?.requestShizukuPermission()} />
           : undefined}

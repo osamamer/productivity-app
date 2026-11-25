@@ -12,4 +12,7 @@ interface IBoundariesShellService {
     // (keeping any already enabled) and turns accessibility on. Returns true if the setting
     // reads back containing the component afterwards.
     boolean enableAccessibilityService(String flattenedComponent) = 2;
+
+    // Same as `adb shell cmd notification allow_listener <component>`. Returns true on success.
+    boolean allowNotificationListener(String flattenedComponent) = 3;
 }

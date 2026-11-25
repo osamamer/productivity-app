@@ -1,4 +1,5 @@
 <resources>
     <string name="boundaries_accessibility_label">Claritard Boundaries</string>
     <string name="boundaries_accessibility_description">Lets Claritard notice when an app you set a boundary for opens, so it can send you back to the home screen or end its time.</string>
+    <string name="boundaries_media_label">Claritard Boundaries media control</string>
 </resources>

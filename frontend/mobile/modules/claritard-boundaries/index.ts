@@ -41,6 +41,12 @@ export interface BoundariesNativeModule {
   /** True if Shizuku turned the service on; false if Shizuku isn't running or granted. */
   enableAccessibilityViaShizuku(): Promise<boolean>;
 
+  /** Notification access, which lets a timed-out app's own audio be paused. */
+  isMediaControlAllowed(): Promise<boolean>;
+  openMediaControlSettings(): Promise<void>;
+  /** True if Shizuku allowed it; false if Shizuku isn't running or granted. */
+  allowMediaControlViaShizuku(): Promise<boolean>;
+
   isDeviceAdminActive(): Promise<boolean>;
   requestDeviceAdmin(): Promise<void>;
 
