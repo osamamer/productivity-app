@@ -1,4 +1,4 @@
-import React, { ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
     Box,
@@ -6,7 +6,6 @@ import {
     ButtonBase,
     CircularProgress,
     Collapse,
-    Alert,
     Fade,
     IconButton,
     ListItemIcon,
@@ -15,7 +14,6 @@ import {
     MenuItem,
     Popover,
     Portal,
-    Snackbar,
     TextField,
     Typography,
 } from '@mui/material';
@@ -32,7 +30,6 @@ import AdsClickIcon from '@mui/icons-material/AdsClick';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import HistoryIcon from '@mui/icons-material/History';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ReplayIcon from '@mui/icons-material/Replay';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
@@ -57,7 +54,6 @@ import { SmartTaskInput } from '../components/input/SmartTaskInput';
 import { GroupTaskInputRow } from '../components/task/GroupTaskInputRow';
 import { StatGroupTaskComposer } from '../components/task/StatGroupTaskComposer';
 import { GroupTaskCount } from '../components/task/GroupTaskCount';
-import { orderHomeSchedule } from '../services/utils/homeTaskOrdering';
 import { TaskParentPopover } from '../components/task/TaskParentPopover';
 import { FlatTaskRow } from '../components/FlatTaskRow';
 import { TaskToCreate } from '../types/TaskToCreate';
@@ -69,15 +65,12 @@ import { PomodoroStatus } from '../types/PomodoroStatus';
 import { celebrateStatLogged } from '../services/statCelebration';
 import { playAudioFeedback } from '../services/audioFeedback';
 import { taskCompletionFeedbackKind } from '../services/utils/taskCompletionFeedback';
-import { dateKey, taskDateKey } from '../services/utils/taskDate';
-import { getHomeDisplayDate, getNextHomeDayBoundary } from '../services/utils/homeDay';
-import { getRuntimeUserPreference, subscribeToUserPreferences } from '../services/userPreferenceStore';
+import { taskDateKey } from '../services/utils/taskDate';
 import { BulkTaskDatePopover } from '../components/task/BulkTaskDatePopover';
 import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboardDelete';
 import { TaskReminderPicker } from '../components/task/TaskReminderPicker';
 import { usePomodoro } from '../hooks/usePomodoro';
 import { TodayEventsSection } from '../components/home/TodayEventsSection';
-import { subscribeToAppRefresh } from '../services/utils/appRefresh';
 import {
     type ActiveDrag,
     type ActiveExpansion,
@@ -91,26 +84,20 @@ import {
     type GroupTaskDropPlacement,
     type HomeTaskListScope,
     type PendingHomeDateEdit,
-    type PendingUndo,
     type SelectionEntity,
     type TaskContextMenuState,
-    type TaskFeedback,
     type TaskListItem,
     type TaskReminderEditorState,
     type TodayDropPlacement,
 } from './home/homeTypes';
-import { collapsedHomeGroupIds, groupExpansionId, reconcileCollapsedHomeGroupIds } from './home/homeGroupExpansion';
-import { deleteTasksForScope, requestHasRecurringTasks, tasksForDeleteScope } from './home/homeTaskDeletion';
+import { groupExpansionId } from './home/homeGroupExpansion';
+import { deleteTasksForScope, tasksForDeleteScope } from './home/homeTaskDeletion';
 import { homeActiveExpansionStorageKey, readHomeActiveExpansion } from './home/homeActiveExpansion';
 import {
     EDGE_DROP_ZONE_LIST_OVERLAP,
     EDGE_DROP_ZONE_OUTSIDE_REACH,
     FOCUS_TASK_SLIDE_DURATION_MS,
-    SELECTION_ACTIONS_EDGE_PADDING,
-    SELECTION_ACTIONS_FALLBACK_WIDTH,
-    SELECTION_ACTIONS_GAP,
     TASKS_FADE_DURATION_MS,
-    TASK_COMPLETION_REORDER_DURATION_MS,
     TASK_EXIT_DURATION_MS,
     TASK_REORDER_DURATION_MS,
     TOTAL_FOCUS_TRANSITION_MS,
@@ -121,15 +108,23 @@ import {
     tasksFadeAway,
     tasksFadeBack,
 } from './home/homeMotion';
-import { SlideFromRight } from './home/SlideFromRight';
+import { useTaskFeedback } from './home/useTaskFeedback';
+import { useSelectionActionsPosition } from './home/useSelectionActionsPosition';
+import { useHomeDisplayDay } from './home/useHomeDisplayDay';
+import { useHomeTaskLayoutSnapshot } from './home/useHomeTaskLayoutSnapshot';
+import { useHomeTaskDetailsPrefetch } from './home/useHomeTaskDetailsPrefetch';
+import { useHomeTaskGroups } from './home/useHomeTaskGroups';
+import { HomeTaskFeedbackSnackbar } from './home/HomeTaskFeedbackSnackbar';
+import { HomeDeletePopover } from './home/HomeDeletePopover';
 import { buildTaskListItems } from './home/homeTaskListItems';
+import { homeTodayTasks as homeTodayTasksFor, olderHomeTasks, visibleHomeTasks } from './home/homeTaskBuckets';
 import {
     dropIntent,
     groupTaskDropPlacement,
     isDragOverTask,
     taskDropEdge,
 } from './home/homeDragDrop';
-import { AnimatedGroupTaskRows, AnimatedTaskList, type HomeTaskLayoutSnapshot } from './home/AnimatedTaskList';
+import { AnimatedGroupTaskRows, AnimatedTaskList } from './home/AnimatedTaskList';
 import {
     removeTaskIdFromGroup,
     replaceTaskGroupIfChanged,
@@ -159,17 +154,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     const restoredPomodoroTaskId = restoredPomodoro?.associatedTaskId ?? null;
     const location = useLocation();
     const navigate = useNavigate();
-    const homeDayEndHour = useSyncExternalStore(
-        subscribeToUserPreferences,
-        () => getRuntimeUserPreference('homeDayEndHour'),
-        () => 0,
-    );
-    const [homeClockTime, setHomeClockTime] = useState(() => new Date());
-    const homeDisplayDay = useMemo(
-        () => getHomeDisplayDate(homeClockTime, homeDayEndHour),
-        [homeClockTime, homeDayEndHour],
-    );
-    const homeDisplayDayKey = dateKey(homeDisplayDay);
+    const { homeDisplayDay, homeDisplayDayKey } = useHomeDisplayDay();
     const [animateGreeting] = useState(() => !hasAnimatedHomeGreeting);
     const [activeExpansion, setActiveExpansion] = useState<ActiveExpansion>(() => (
         restoredPomodoroTaskId
@@ -181,8 +166,6 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     ));
     const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
     const [editRequest, setEditRequest] = useState<EditRequest | null>(null);
-    const [selectionActionsPosition, setSelectionActionsPosition] = useState<{ top: number; left: number } | null>(null);
-    const [taskFeedback, setTaskFeedback] = useState<TaskFeedback | null>(null);
     const [pendingHomeDateTaskIds, setPendingHomeDateTaskIds] = useState<string[]>([]);
     const [pendingDeletedTaskIds, setPendingDeletedTaskIds] = useState<string[]>([]);
     const [homeTaskListAnimating, setHomeTaskListAnimating] = useState(false);
@@ -205,13 +188,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     const [groupTaskInputGeneration, setGroupTaskInputGeneration] = useState(0);
     const [bulkDateAnchorEl, setBulkDateAnchorEl] = useState<HTMLElement | null>(null);
     const [bulkDateDraft, setBulkDateDraft] = useState(() => new Date());
-    const [cachedGroups] = useState(() => taskGroupService.getCachedGroups());
-    const [groups, setGroups] = useState<TaskGroup[] | null>(() => cachedGroups ?? null);
-    const groupsRef = useRef(groups);
-    groupsRef.current = groups;
-    const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
-        () => collapsedHomeGroupIds(cachedGroups ?? []),
-    );
+    const { groups, setGroups, collapsedGroupIds, setCollapsedGroupIds, refreshGroups } = useHomeTaskGroups();
     const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
     const groupNameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
     const [draggedTaskIds, setDraggedTaskIds] = useState<string[]>([]);
@@ -238,63 +215,13 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     const focusedPomodoroRowRef = useRef<HTMLDivElement | null>(null);
     const olderTasksSectionRef = useRef<HTMLDivElement | null>(null);
     const completionCardExpansionRef = useRef(false);
-    const selectionActionsRef = useRef<HTMLDivElement | null>(null);
-    const taskFeedbackIdRef = useRef(0);
-    const pendingUndoRef = useRef<PendingUndo | null>(null);
     const pendingHomeDateEditsRef = useRef(new Map<string, PendingHomeDateEdit>());
     const focusTransitionTimerRef = useRef<number | null>(null);
     const temporarilyCollapsedGroupIdRef = useRef<string | null>(null);
     const groupTaskSubmissionRef = useRef(false);
     const activeDragRef = useRef<ActiveDrag | null>(null);
     const taskRenderKeysRef = useRef(new Map<string, string>());
-    const todayLayoutSnapshotRef = useRef<HomeTaskLayoutSnapshot | null>(null);
-    const olderLayoutSnapshotRef = useRef<HomeTaskLayoutSnapshot | null>(null);
-
-    const captureHomeTaskLayout = useCallback(() => {
-        const todaySnapshot: HomeTaskLayoutSnapshot = {
-            itemRects: new Map(),
-            taskRectsById: new Map(),
-            completionChange: true,
-        };
-        const olderSnapshot: HomeTaskLayoutSnapshot = {
-            itemRects: new Map(),
-            taskRectsById: new Map(),
-            completionChange: true,
-        };
-
-        document.querySelectorAll<HTMLElement>(
-            '[data-home-task-layout-scope][data-home-task-layout-item]',
-        ).forEach(itemElement => {
-            if (itemElement.dataset.homeListExiting === 'true') return;
-            const snapshot = itemElement.dataset.homeTaskLayoutScope === 'older'
-                ? olderSnapshot
-                : todaySnapshot;
-            const itemId = itemElement.dataset.homeTaskLayoutItem;
-            if (!itemId) return;
-
-            snapshot.itemRects.set(itemId, itemElement.getBoundingClientRect());
-            itemElement.querySelectorAll<HTMLElement>('[data-task-id]').forEach(taskElement => {
-                if (taskElement.closest('[data-task-exiting="true"]')) return;
-                const taskId = taskElement.dataset.taskId;
-                if (taskId) snapshot.taskRectsById.set(taskId, taskElement.getBoundingClientRect());
-            });
-        });
-
-        todayLayoutSnapshotRef.current = todaySnapshot;
-        olderLayoutSnapshotRef.current = olderSnapshot;
-        window.setTimeout(() => {
-            if (todayLayoutSnapshotRef.current === todaySnapshot) todayLayoutSnapshotRef.current = null;
-            if (olderLayoutSnapshotRef.current === olderSnapshot) olderLayoutSnapshotRef.current = null;
-        }, TASK_COMPLETION_REORDER_DURATION_MS + 80);
-
-        document.querySelectorAll<HTMLElement>('[data-home-flip-active="true"]').forEach(element => {
-            element.style.transition = 'none';
-            element.style.transform = '';
-            delete element.dataset.homeFlipActive;
-            void element.offsetHeight;
-            element.style.transition = '';
-        });
-    }, []);
+    const { captureHomeTaskLayout, todayLayoutSnapshotRef, olderLayoutSnapshotRef } = useHomeTaskLayoutSnapshot();
 
     const rememberTaskRenderKey = useCallback((taskId: string, renderKey: string) => {
         if (!taskRenderKeysRef.current.has(taskId)) {
@@ -345,10 +272,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
 
     const hasActiveDrag = useCallback(() => activeDragRef.current !== null, []);
 
-    const showTaskFeedback = useCallback((severity: TaskFeedback['severity'], message: string) => {
-        taskFeedbackIdRef.current += 1;
-        setTaskFeedback({ id: taskFeedbackIdRef.current, severity, message });
-    }, []);
+    const { taskFeedback, showTaskFeedback, showUndoFeedback, undoTaskFeedback, dismissTaskFeedback } = useTaskFeedback();
 
     function showTaskCreationDateFeedback(scheduledPerformDateTime?: string) {
         if (!scheduledPerformDateTime) return;
@@ -361,29 +285,6 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
             `Task was created for ${formatTaskDateForFeedback(scheduledPerformDateTime)}`,
         );
     }
-
-    const showUndoFeedback = useCallback((
-        message: string,
-        undo: () => void | Promise<void>,
-        commit: () => void | Promise<void> = () => {},
-        severity: TaskFeedback['severity'] = 'success',
-    ) => {
-        const previousUndo = pendingUndoRef.current;
-        if (previousUndo) {
-            window.clearTimeout(previousUndo.timeoutId);
-            void previousUndo.commit();
-        }
-
-        const timeoutId = window.setTimeout(() => {
-            if (pendingUndoRef.current?.timeoutId !== timeoutId) return;
-            pendingUndoRef.current = null;
-            setTaskFeedback(previous => previous?.undo === undo ? null : previous);
-            void commit();
-        }, 5000);
-        pendingUndoRef.current = { timeoutId, commit };
-        taskFeedbackIdRef.current += 1;
-        setTaskFeedback({ id: taskFeedbackIdRef.current, severity, message, undo });
-    }, []);
 
     const {
         allTasks,
@@ -401,14 +302,6 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
         reorderTasksInState,
     } = useGlobalTasks({ homeMode: true, prioritizeToday: true });
     const previousHomeDisplayDayKey = useRef(homeDisplayDayKey);
-    useEffect(() => {
-        const nextBoundary = getNextHomeDayBoundary(new Date(), homeDayEndHour);
-        const timeout = window.setTimeout(
-            () => setHomeClockTime(new Date()),
-            Math.max(0, nextBoundary.getTime() - Date.now()) + 25,
-        );
-        return () => window.clearTimeout(timeout);
-    }, [homeDayEndHour, homeDisplayDayKey]);
     useEffect(() => {
         if (previousHomeDisplayDayKey.current === homeDisplayDayKey) return;
         previousHomeDisplayDayKey.current = homeDisplayDayKey;
@@ -453,32 +346,13 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     const activePomodoroTaskIdForHome = activePomodoro?.active
         ? activePomodoro.associatedTaskId
         : activePomodoroTaskId;
-    const homeTodayTasks = useMemo(() => {
-        const seenTaskIds = new Set<string>();
-        const mergedTasks: Task[] = [];
-        const taskById = new Map(allTasks.map(task => [task.taskId, task] as const));
-        const addMainTask = (task: Task) => {
-            const latestTask = taskById.get(task.taskId);
-            const taskToAdd = latestTask ?? task;
-            if (taskToAdd.parentId || seenTaskIds.has(taskToAdd.taskId)) return;
-            if (latestTask && !isScheduledForHomeDay(latestTask, homeDisplayDayKey)
-                && latestTask.taskId !== activePomodoroTaskIdForHome) return;
-            seenTaskIds.add(task.taskId);
-            mergedTasks.push(taskToAdd);
-        };
-
-        todayTasks.filter(task => isScheduledForHomeDay(task, homeDisplayDayKey)).forEach(addMainTask);
-        allTasks.forEach(task => {
-            if (isScheduledForHomeDay(task, homeDisplayDayKey) || task.taskId === activePomodoroTaskIdForHome) {
-                addMainTask(task);
-            }
-        });
-        if (resolvedActivePomodoroTask?.taskId === activePomodoroTaskIdForHome) {
-            addMainTask(resolvedActivePomodoroTask);
-        }
-
-        return orderHomeSchedule(mergedTasks);
-    }, [activePomodoroTaskIdForHome, allTasks, homeDisplayDayKey, resolvedActivePomodoroTask, todayTasks]);
+    const homeTodayTasks = useMemo(() => homeTodayTasksFor({
+        allTasks,
+        todayTasks,
+        homeDayKey: homeDisplayDayKey,
+        activeTaskId: activePomodoroTaskIdForHome,
+        resolvedActiveTask: resolvedActivePomodoroTask,
+    }), [activePomodoroTaskIdForHome, allTasks, homeDisplayDayKey, resolvedActivePomodoroTask, todayTasks]);
     const todayTasksForCompletion = useMemo(() => homeTodayTasks.filter(task => (
         isScheduledForHomeDay(task, homeDisplayDayKey) && !pendingDeletedTaskIdSet.has(task.taskId)
     )), [homeDisplayDayKey, homeTodayTasks, pendingDeletedTaskIdSet]);
@@ -493,39 +367,22 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     }, [allTodayTasksComplete]);
 
     const visibleTasks = useMemo(
-        () => {
-            const showCompletedToday = allTodayTasksComplete
+        () => visibleHomeTasks({
+            todayTasks: homeTodayTasks,
+            allTasks,
+            showCompleted: allTodayTasksComplete
                 ? showCompletionDetails
-                : getShowCompletedHomeTasks() || !getExcludeTodayCompletedHomeTasks();
-            const todayTaskIds = new Set(homeTodayTasks.map(task => task.taskId));
-            const pendingDateTasks = pendingHomeDateTaskIds
-                .map(taskId => allTasks.find(task => task.taskId === taskId))
-                .filter((task): task is Task => task !== undefined && !todayTaskIds.has(task.taskId))
-                .sort((first, second) => (
-                    (pendingHomeDateEditsRef.current.get(first.taskId)?.originalIndex ?? Number.MAX_SAFE_INTEGER)
-                    - (pendingHomeDateEditsRef.current.get(second.taskId)?.originalIndex ?? Number.MAX_SAFE_INTEGER)
-                ));
-            const tasksInOriginalOrder = [...homeTodayTasks];
-            pendingDateTasks.forEach(task => {
-                const originalIndex = pendingHomeDateEditsRef.current.get(task.taskId)?.originalIndex
-                    ?? tasksInOriginalOrder.length;
-                tasksInOriginalOrder.splice(Math.min(originalIndex, tasksInOriginalOrder.length), 0, task);
-            });
-            return tasksInOriginalOrder
-                .filter(task => !pendingDeletedTaskIdSet.has(task.taskId))
-                .filter(task => !task.parentId && (
-                    showCompletedToday
-                    || !task.completed
-                    || task.taskId === activePomodoroTaskIdForHome
-                ));
-        },
+                : getShowCompletedHomeTasks() || !getExcludeTodayCompletedHomeTasks(),
+            pendingDateTaskIds: pendingHomeDateTaskIds,
+            pendingDateEdits: pendingHomeDateEditsRef.current,
+            pendingDeletedTaskIds: pendingDeletedTaskIdSet,
+            activeTaskId: activePomodoroTaskIdForHome,
+        }),
         [activePomodoroTaskIdForHome, allTasks, allTodayTasksComplete, homeTodayTasks,
             pendingDeletedTaskIdSet, pendingHomeDateTaskIds, showCompletionDetails],
     );
     const olderTasks = useMemo(
-        () => pastTasks.filter(task => !pendingDeletedTaskIdSet.has(task.taskId)
-            && !task.parentId && !task.completed
-            && !isScheduledForHomeDay(task, homeDisplayDayKey)),
+        () => olderHomeTasks(pastTasks, homeDisplayDayKey, pendingDeletedTaskIdSet),
         [homeDisplayDayKey, pastTasks, pendingDeletedTaskIdSet],
     );
     const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
@@ -652,42 +509,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
         () => pomodoroTaskMinimized ? null : activePomodoroTask,
         [activePomodoroTask, pomodoroTaskMinimized],
     );
-    useEffect(() => {
-        let cancelled = false;
-        const todayDetailTasks = [...new Map(
-            [...visibleTasks, ...(focusedPomodoroTask ? [focusedPomodoroTask] : [])]
-                .map(task => [task.taskId, task] as const),
-        ).values()];
-        const todayIds = new Set(todayDetailTasks.map(task => task.taskId));
-        const olderDetailTasks = olderTasks.filter(task => !todayIds.has(task.taskId));
-
-        const prefetchTasks = (tasks: Task[], workerCount: number) => {
-            let nextTaskIndex = 0;
-            const worker = async () => {
-                while (!cancelled) {
-                    const task = tasks[nextTaskIndex++];
-                    if (!task) return;
-                    try {
-                        await taskService.getTaskDetails(task);
-                    } catch (error) {
-                        console.error('Error prefetching Home task details:', error);
-                    }
-                }
-            };
-            return Promise.all(Array.from({ length: Math.min(workerCount, tasks.length) }, () => worker()));
-        };
-
-        // Keep older details warm even when today's list is long, with four requests at most.
-        const olderWorkers = olderDetailTasks.length > 0 ? (todayDetailTasks.length > 0 ? 2 : 4) : 0;
-        void Promise.all([
-            prefetchTasks(todayDetailTasks, 4 - olderWorkers),
-            prefetchTasks(olderDetailTasks, olderWorkers),
-        ]);
-
-        return () => {
-            cancelled = true;
-        };
-    }, [focusedPomodoroTask, olderTasks, visibleTasks]);
+    useHomeTaskDetailsPrefetch(visibleTasks, focusedPomodoroTask, olderTasks);
     const tasksBelowFocus = useMemo(
         () => focusedPomodoroTask
             ? visibleTasks.filter(task => task.taskId !== focusedPomodoroTask.taskId)
@@ -747,75 +569,12 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
         navigate('/', { replace: true, state: null });
     }, [allTasks, allTasksSynchronized, homeContentReady, location.state, navigate, resolvedActivePomodoroTask]);
 
-    const updateSelectionActionsPosition = useCallback(() => {
-        if (!selectionActionsVisible) {
-            return;
-        }
-
-        const selectedRows = Array.from(document.querySelectorAll<HTMLElement>('[data-task-id]'))
-            .filter(row => selectedActionTaskIdSet.has(row.dataset.taskId ?? ''));
-        const selectedGroupRows = Array.from(document.querySelectorAll<HTMLElement>('[data-task-group-id]'))
-            .filter(row => selectedGroupIdSet.has(row.dataset.taskGroupId ?? ''));
-        const rows = [...selectedRows, ...selectedGroupRows];
-        if (rows.length === 0) {
-            setSelectionActionsPosition(null);
-            return;
-        }
-
-        const bounds = rows.map(row => row.getBoundingClientRect());
-        const rowCenters = bounds.map(rect => rect.top + rect.height / 2);
-        const top = (Math.min(...rowCenters) + Math.max(...rowCenters)) / 2;
-        const right = Math.max(...bounds.map(rect => rect.right));
-        const popupWidth = selectionActionsRef.current?.getBoundingClientRect().width
-            ?? SELECTION_ACTIONS_FALLBACK_WIDTH;
-        const maxLeft = window.innerWidth - popupWidth - SELECTION_ACTIONS_EDGE_PADDING;
-        const left = Math.min(
-            Math.max(right + SELECTION_ACTIONS_GAP, SELECTION_ACTIONS_EDGE_PADDING),
-            Math.max(SELECTION_ACTIONS_EDGE_PADDING, maxLeft),
-        );
-        const nextPosition = {
-            top: Math.round(top),
-            left: Math.round(left),
-        };
-
-        setSelectionActionsPosition(previous => (
-            previous?.top === nextPosition.top && previous.left === nextPosition.left
-                ? previous
-                : nextPosition
-        ));
-    }, [selectedActionTaskIdSet, selectedGroupIdSet, selectionActionsVisible]);
-
-    useLayoutEffect(() => {
-        if (!selectionActionsVisible) {
-            return undefined;
-        }
-
-        updateSelectionActionsPosition();
-
-        const handleViewportChange = () => updateSelectionActionsPosition();
-        window.addEventListener('resize', handleViewportChange);
-        window.addEventListener('scroll', handleViewportChange, true);
-
-        const resizeObserver = typeof ResizeObserver === 'undefined'
-            ? null
-            : new ResizeObserver(handleViewportChange);
-        if (resizeObserver) {
-            document.querySelectorAll<HTMLElement>('[data-task-id]').forEach(row => {
-                if (selectedActionTaskIdSet.has(row.dataset.taskId ?? '')
-                    || selectedGroupIdSet.has(row.dataset.taskGroupId ?? '')) resizeObserver.observe(row);
-            });
-            document.querySelectorAll<HTMLElement>('[data-task-group-id]').forEach(row => {
-                if (selectedGroupIdSet.has(row.dataset.taskGroupId ?? '')) resizeObserver.observe(row);
-            });
-        }
-
-        return () => {
-            window.removeEventListener('resize', handleViewportChange);
-            window.removeEventListener('scroll', handleViewportChange, true);
-            resizeObserver?.disconnect();
-        };
-    }, [activeExpansion, collapsedGroupIds, focusVisibility, groups, olderTasks, selectedActionTaskIdSet,
-        selectedGroupIdSet, selectionActionsVisible, showOlderTasks, updateSelectionActionsPosition, visibleTasks]);
+    const { position: selectionActionsPosition, actionsRef: selectionActionsRef } = useSelectionActionsPosition(
+        selectionActionsVisible,
+        selectedActionTaskIdSet,
+        selectedGroupIdSet,
+        [activeExpansion, collapsedGroupIds, focusVisibility, groups, olderTasks, showOlderTasks, visibleTasks],
+    );
 
     const clearFocusTransitionTimer = useCallback(() => {
         if (focusTransitionTimerRef.current !== null) {
@@ -844,45 +603,6 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
             focusTransitionTimerRef.current = null;
         }, FOCUS_TASK_SLIDE_DURATION_MS);
     }, []);
-
-    const refreshGroups = useCallback(async (forceRefresh = false) => {
-        try {
-            const fetchedGroups = await taskGroupService.getGroups(forceRefresh);
-            const previousGroups = groupsRef.current ?? [];
-            groupsRef.current = fetchedGroups;
-            setGroups(fetchedGroups);
-            setCollapsedGroupIds(previous => reconcileCollapsedHomeGroupIds(
-                previous,
-                previousGroups,
-                fetchedGroups,
-            ));
-        } catch (err) {
-            console.error('Error fetching task groups:', err);
-            if (!forceRefresh) {
-                setGroups([]);
-                groupsRef.current = [];
-            }
-        }
-    }, []);
-
-    useEffect(() => {
-        void refreshGroups();
-    }, [refreshGroups]);
-
-    useEffect(() => {
-        let refreshing = false;
-        const syncGroups = async () => {
-            if (refreshing || document.visibilityState !== 'visible' || !navigator.onLine) return;
-            refreshing = true;
-            try {
-                await refreshGroups(true);
-            } finally {
-                refreshing = false;
-            }
-        };
-        // The shared heartbeat already skips hidden or offline windows.
-        return subscribeToAppRefresh(() => void syncGroups());
-    }, [refreshGroups]);
 
     useEffect(() => {
         if (!editingGroupId || !groupNameInputRef.current) return;
@@ -927,14 +647,6 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
         const timeoutId = window.setTimeout(() => setTaskReturnEntry(null), TASK_REORDER_DURATION_MS);
         return () => window.clearTimeout(timeoutId);
     }, [taskReturnEntry]);
-
-    useEffect(() => () => {
-        const pendingUndo = pendingUndoRef.current;
-        if (!pendingUndo) return;
-        window.clearTimeout(pendingUndo.timeoutId);
-        pendingUndoRef.current = null;
-        void pendingUndo.commit();
-    }, []);
 
     async function createTask(task: TaskToCreate) {
         if (!task.name.trim()) return;
@@ -1837,7 +1549,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
         setDragTargetGroupId(null);
         setDragTargetPosition(null);
         setDragEdge(null);
-    }, []);
+    }, [setCollapsedGroupIds]);
 
     const persistTaskOrder = useCallback(async (orderedTaskIds: string[], failOnError = false) => {
         const orderRevision = ++manualTaskOrderRevisionRef.current;
@@ -2100,7 +1812,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
                 ? previous
                 : next;
         });
-    }, []);
+    }, [setGroups]);
 
     const createGroupFromTaskDrop = useCallback(async (targetTask: Task, taskIds: string[]) => {
         const groupedTaskIds = [...new Set([targetTask.taskId, ...taskIds])];
@@ -2123,7 +1835,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
             console.error('Error creating task group from drag:', err);
             await refreshGroups();
         }
-    }, [refreshGroups]);
+    }, [refreshGroups, setGroups]);
 
     const groupTasksFromDrop = useCallback(async (targetTask: Task, taskIds: string[]) => {
         const groupedTaskIds = [...new Set([targetTask.taskId, ...taskIds])];
@@ -2195,7 +1907,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
             console.error('Error removing dragged tasks from group:', err);
             await refreshGroups();
         }
-    }, [refreshGroups]);
+    }, [refreshGroups, setGroups]);
 
     const reorderGroupRelativeToTask = useCallback((groupId: string, targetTaskId: string, edge: DropEdge) => {
         const group = groups?.find(candidate => candidate.groupId === groupId);
@@ -2481,21 +2193,6 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
         setParentTaskAnchorEl(null);
         setTaskContextMenu(null);
         selectionAnchorRef.current = null;
-    }
-
-    async function undoTaskFeedback() {
-        const undo = taskFeedback?.undo;
-        const pendingUndo = pendingUndoRef.current;
-        if (!undo) return;
-        if (pendingUndo) window.clearTimeout(pendingUndo.timeoutId);
-        pendingUndoRef.current = null;
-        setTaskFeedback(null);
-        try {
-            await undo();
-        } catch (error) {
-            console.error('Error undoing Home task action:', error);
-            showTaskFeedback('error', 'Could not undo that action');
-        }
     }
 
     function openBulkDatePicker(anchorEl: HTMLElement) {
@@ -4158,124 +3855,13 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
                     )}
                 </Menu>
 
-                <Popover
-                    open={deleteRequest !== null}
-                    anchorEl={deleteRequest?.anchorEl}
+                <HomeDeletePopover
+                    request={deleteRequest}
+                    submitting={deleteSubmitting}
                     onClose={closeDeleteRequest}
-                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                    transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-                    slotProps={{
-                        paper: {
-                            sx: {
-                                p: 1.5,
-                                width: deleteRequest && requestHasRecurringTasks(deleteRequest)
-                                    ? deleteRequest.kind === 'group' ? 480 : 380
-                                    : 270,
-                                maxWidth: 'calc(100vw - 32px)',
-                                borderRadius: 2.5,
-                            },
-                        },
-                    }}
-                >
-                    {deleteRequest && (
-                        <Box>
-                            <Typography variant="body2" sx={{ mb: 1.25 }}>
-                                {deleteRequest.kind === 'group'
-                                    ? deleteRequest.group.isStatGroup
-                                        ? `Remove “${deleteRequest.group.name}” from task groups? Its tasks and statistics will remain.`
-                                        : `Delete “${deleteRequest.group.name}” and its ${deleteRequest.tasks.length} task${deleteRequest.tasks.length === 1 ? '' : 's'}?`
-                                    : deleteRequest.kind === 'bulk'
-                                        ? `Delete ${deleteRequest.tasks.length} selected task${deleteRequest.tasks.length > 1 ? 's' : ''}?`
-                                        : deleteRequest.tasks[0].taskSeriesId
-                                            ? `Choose which occurrences of “${deleteRequest.tasks[0].name}” to delete?`
-                                            : `Delete “${deleteRequest.tasks[0].name}” and its subtasks?`}
-                            </Typography>
-                            {requestHasRecurringTasks(deleteRequest) ? (
-                                <Box
-                                    sx={{
-                                        display: 'grid',
-                                        gridTemplateColumns: deleteRequest.kind === 'group'
-                                            ? 'repeat(3, minmax(0, 1fr))'
-                                            : 'repeat(2, minmax(0, 1fr))',
-                                        gap: 0.5,
-                                        '& .MuiButton-root': {
-                                            width: '100%',
-                                            minWidth: 0,
-                                            minHeight: 38,
-                                            px: 0.75,
-                                            py: 0.5,
-                                            lineHeight: 1.2,
-                                            whiteSpace: 'normal',
-                                        },
-                                    }}
-                                >
-                                    <Button
-                                        size="small"
-                                        onClick={() => void confirmDelete('occurrence')}
-                                        disabled={deleteSubmitting}
-                                    >
-                                        {deleteRequest.kind === 'single' ? 'This occurrence' : 'Selected occurrences'}
-                                    </Button>
-                                    <Button
-                                        size="small"
-                                        onClick={() => void confirmDelete('future')}
-                                        disabled={deleteSubmitting}
-                                    >
-                                        Future occurrences
-                                    </Button>
-                                    {deleteRequest.kind !== 'group' && (
-                                        <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>
-                                            Cancel
-                                        </Button>
-                                    )}
-                                    <Button
-                                        size="small"
-                                        color="error"
-                                        variant="contained"
-                                        onClick={() => void confirmDelete('series')}
-                                        disabled={deleteSubmitting}
-                                    >
-                                        {deleteSubmitting ? 'Deleting…' : 'Delete series'}
-                                    </Button>
-                                    {deleteRequest.kind === 'group' && !deleteRequest.group.isStatGroup && (
-                                        <Button size="small" onClick={() => void confirmUngroup()} disabled={deleteSubmitting}>
-                                            Ungroup
-                                        </Button>
-                                    )}
-                                    {deleteRequest.kind === 'group' && (
-                                        <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>
-                                            Cancel
-                                        </Button>
-                                    )}
-                                </Box>
-                            ) : (
-                                <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5 }}>
-                                    <Button size="small" onClick={closeDeleteRequest} disabled={deleteSubmitting}>
-                                        Cancel
-                                    </Button>
-                                    {deleteRequest.kind === 'group' && !deleteRequest.group.isStatGroup && (
-                                        <Button size="small" onClick={() => void confirmUngroup()} disabled={deleteSubmitting}>
-                                            Ungroup
-                                        </Button>
-                                    )}
-                                    <Button
-                                        size="small"
-                                        color="error"
-                                        variant="contained"
-                                        onClick={() => void confirmDelete()}
-                                        disabled={deleteSubmitting}
-                                    >
-                                        {deleteSubmitting
-                                            ? <CircularProgress size={16} color="inherit" />
-                                            : deleteRequest.kind === 'group' && deleteRequest.group.isStatGroup
-                                                ? 'Remove group'
-                                                : 'Delete'}
-                                    </Button>
-                                </Box>
-                            )}
-                        </Box>
-                    )}
-                </Popover>
+                    onConfirm={scope => void confirmDelete(scope)}
+                    onUngroup={() => void confirmUngroup()}
+                />
 
                 <Popover
                     open={Boolean(groupAnchorEl)}
@@ -4338,68 +3924,11 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
                     onApply={() => void performBulkAction('move-to-date', formatLocalDateTime(bulkDateDraft))}
                 />
 
-                <Snackbar
-                    key={taskFeedback?.id}
-                    open={taskFeedback !== null}
-                    autoHideDuration={taskFeedback?.undo ? 5000 : 2000}
-                    onClose={(_, reason) => {
-                        if (reason !== 'clickaway') setTaskFeedback(null);
-                    }}
-                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                    TransitionComponent={SlideFromRight}
-                    sx={{
-                        right: { xs: 12, sm: 28 },
-                        bottom: { xs: 12, sm: 28 },
-                    }}
-                >
-                    {taskFeedback ? (
-                        <Alert
-                            severity={taskFeedback.severity}
-                            variant="outlined"
-                            icon={<InfoOutlinedIcon fontSize="small" />}
-                            action={taskFeedback.undo ? (
-                                <Button
-                                    size="small"
-                                    color="inherit"
-                                    startIcon={<ReplayIcon fontSize="small" />}
-                                    onClick={() => void undoTaskFeedback()}
-                                    sx={{ whiteSpace: 'nowrap' }}
-                                >
-                                    Undo
-                                </Button>
-                            ) : undefined}
-                            onClose={() => setTaskFeedback(null)}
-                            sx={{
-                                position: 'relative',
-                                minWidth: 240,
-                                maxWidth: 'calc(100vw - 48px)',
-                                boxSizing: 'border-box',
-                                alignItems: 'center',
-                                backgroundColor: 'background.paper',
-                                px: 1.5,
-                                py: 0.5,
-                                '& .MuiAlert-message': {
-                                    flex: '1 1 auto',
-                                    minWidth: 0,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    py: 0.25,
-                                    fontSize: '0.85rem',
-                                },
-                                '& .MuiAlert-action': {
-                                    position: 'static',
-                                    flex: '0 0 auto',
-                                    alignSelf: 'center',
-                                    p: 0,
-                                    m: 0,
-                                    ml: 1,
-                                },
-                            }}
-                        >
-                            {taskFeedback.message}
-                        </Alert>
-                    ) : undefined}
-                </Snackbar>
+                <HomeTaskFeedbackSnackbar
+                    feedback={taskFeedback}
+                    onUndo={() => void undoTaskFeedback()}
+                    onDismiss={dismissTaskFeedback}
+                />
 
             </Box>
         </PageWrapper>
