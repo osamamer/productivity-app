@@ -21,18 +21,10 @@ import {
     Typography,
     useTheme,
 } from '@mui/material';
-import { keyframes } from '@mui/system';
 import TimerIcon from '@mui/icons-material/Timer';
 import TuneIcon from '@mui/icons-material/Tune';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import PauseIcon from '@mui/icons-material/Pause';
 import StopIcon from '@mui/icons-material/Stop';
-import SkipNextIcon from '@mui/icons-material/SkipNext';
-import AddIcon from '@mui/icons-material/Add';
-import RemoveIcon from '@mui/icons-material/Remove';
-import { TIMER_DIGITS_SX } from './timer/timerDigits';
 import FreeBreakfastIcon from '@mui/icons-material/FreeBreakfast';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -67,7 +59,6 @@ import {
     updateCachedTaskDetails,
     type TaskDetailsCacheEntry,
 } from '../services/cache/taskDetailsCache';
-import { PomodoroNumberField } from './timer/PomodoroNumberField';
 import { SubtaskNameField } from './task/SubtaskNameField';
 import { SubtaskBulkActions } from './task/SubtaskSelection';
 import { useSubtaskSelection } from './task/useSubtaskSelection';
@@ -76,7 +67,6 @@ import { AppDateField } from './input/AppPickerFields';
 import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from './task/TaskRecurrencePicker';
 import { TaskSeriesTimeField } from './task/TaskSeriesTimeField';
 import { TaskSchedulePicker } from './task/TaskSchedulePicker';
-import { WhiteNoiseControl } from './timer/WhiteNoiseControl';
 import { createAuthenticatedStompClient } from '../services/authenticatedStompClient';
 import { usePomodoroActions } from '../hooks/usePomodoro';
 import { getRuntimeUserPreferences, subscribeToUserPreferences } from '../services/userPreferenceStore';
@@ -89,7 +79,22 @@ import { getPomodoroProgressPercentage } from '../services/utils/pomodoroProgres
 import { TaskOriginAdornment } from './task/TaskOriginAdornment';
 import type { TaskOriginKind } from './task/TaskOriginUtils';
 import { recurrenceDraftFromSeries } from '../services/utils/taskRecurrenceDraft';
+import { PomodoroCompleteSummary } from './task-row/PomodoroCompleteSummary';
+import { PomodoroSetupForm } from './task-row/PomodoroSetupForm';
+import { PomodoroRunningControls } from './task-row/PomodoroRunningControls';
 
+import {
+    PRIORITY_OPTIONS,
+    checkboxColor,
+    currentPriorityLabel,
+    formatScheduledDate,
+    formatTaskDateTime,
+    isBreakPhase,
+    isEditableDragOrigin,
+    isWaitingForPhase,
+    sortSubtasks,
+} from './task-row/taskRowHelpers';
+import { pomodoroPanelReveal, subtaskFadeIn } from './task-row/taskRowMotion';
 // ─── types ─────────────────────────────────────────────────────────────────
 
 export type FlatTaskRowProps = {
@@ -153,129 +158,7 @@ type SubtaskContextMenuState = {
 
 const EMPTY_SUBTASKS: Task[] = [];
 const TASK_ROW_BORDER_WIDTH = '2px';
-const subtaskFadeIn = keyframes`
-    from { opacity: 0.72; }
-    to { opacity: 1; }
-`;
-
-function sortSubtasks(items: Task[]): Task[] {
-    return [...items].sort((first, second) => {
-        const firstCreated = Date.parse(first.creationDateTime);
-        const secondCreated = Date.parse(second.creationDateTime);
-        if (Number.isFinite(firstCreated) && Number.isFinite(secondCreated)
-            && firstCreated !== secondCreated) {
-            return firstCreated - secondCreated;
-        }
-        if (first.displayOrder !== second.displayOrder) {
-            return first.displayOrder - second.displayOrder;
-        }
-        return first.taskId.localeCompare(second.taskId);
-    });
-}
-
-const pomodoroPanelReveal = keyframes`
-    from {
-        opacity: 0;
-    }
-    to {
-        opacity: 1;
-    }
-`;
-
-function checkboxColor(importance: number): string {
-    if (importance > 7) return '#ef4444';
-    if (importance > 4) return '#eab308';
-    return '#1976d2';
-}
-
-function formatSeconds(seconds: number): string {
-    const safeSeconds = Math.max(0, Math.floor(seconds));
-    const m = Math.floor(safeSeconds / 60);
-    const s = safeSeconds % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-function formatFocusDuration(seconds: number): string {
-    const safeSeconds = Math.max(0, Math.floor(seconds));
-    const hours = Math.floor(safeSeconds / 3600);
-    const minutes = Math.floor((safeSeconds % 3600) / 60);
-    const remainingSeconds = safeSeconds % 60;
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    if (minutes > 0) return `${minutes}m ${remainingSeconds.toString().padStart(2, '0')}s`;
-    return `${remainingSeconds}s`;
-}
-
-function isWaitingForPhase(status: PomodoroStatus | null): boolean {
-    return status?.phase === 'WAITING_FOR_BREAK' || status?.phase === 'WAITING_FOR_FOCUS';
-}
-
-function isBreakPhase(status: PomodoroStatus): boolean {
-    return status.phase
-        ? status.phase === 'BREAK' || status.phase === 'WAITING_FOR_BREAK'
-        : !status.sessionActive;
-}
-
-const PRIORITY_OPTIONS = [
-    { label: 'Low',    value: 3, color: '#1976d2' },
-    { label: 'Medium', value: 6, color: '#eab308' },
-    { label: 'High',   value: 9, color: '#ef4444' },
-];
-
 const TASK_NAME_TRAILING_SPACE = '32px';
-
-function currentPriorityLabel(importance: number): string {
-    if (importance > 7) return 'High';
-    if (importance > 4) return 'Medium';
-    return 'Low';
-}
-
-function formatScheduledDate(dateTime: string): string {
-    const date = new Date(dateTime);
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const taskDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    if (taskDate.getTime() === today.getTime()) return 'Today';
-    if (taskDate.getTime() === tomorrow.getTime()) return 'Tomorrow';
-    if (taskDate.getTime() === yesterday.getTime()) return 'Yesterday';
-
-    const daysDiff = Math.floor((taskDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    if (Math.abs(daysDiff) < 7) {
-        return date.toLocaleDateString('en-US', { weekday: 'long' });
-    }
-
-    if (date.getFullYear() !== now.getFullYear()) {
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    }
-
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function formatTaskDateTime(date: Date | null): string {
-    if (!date || Number.isNaN(date.getTime())) return '';
-    const pad = (value: number) => String(value).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-        + `T${pad(date.getHours())}:${pad(date.getMinutes())}:00`;
-}
-
-function isEditableDragOrigin(target: EventTarget | null): boolean {
-    if (!(target instanceof Element)) return false;
-
-    const taskNameInput = target.closest('textarea[data-task-name-input="true"]');
-    if (taskNameInput) return taskNameInput === document.activeElement;
-
-    if (target.closest('[data-task-name="true"]')) return true;
-
-    if (target.closest('[data-subtask-text="true"]')) return true;
-
-    return target.closest(
-        'input, textarea, select, button, [role="button"], .MuiButtonBase-root, [contenteditable="true"]',
-    ) !== null;
-}
 
 // ─── component ─────────────────────────────────────────────────────────────
 
@@ -321,7 +204,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
 }: FlatTaskRowProps) {
     const theme = useTheme();
     const canEditSchedule = !readOnly && (!task.mentalThreadId || allowThreadTaskScheduling);
-    const accent = theme.palette.primary.light;
     const activeAccent = theme.palette.primary.main;
     const pomodoroGreen = theme.palette.mode === 'dark' ? '#9BC5A3' : '#7EA88A';
     const {
@@ -1427,7 +1309,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const waitingForPhase = isWaitingForPhase(pomodoroStatus);
     const isBreak   = isActive && pomodoroStatus !== null && isBreakPhase(pomodoroStatus);
     const timeAdjustmentMinutes = userPreferences.pomodoroTimeAdjustmentMinutes;
-    const timeAdjustmentLabel = `${timeAdjustmentMinutes} ${timeAdjustmentMinutes === 1 ? 'minute' : 'minutes'}`;
     const canAdjustTime = Boolean(pomodoroStatus?.active
         && !waitingForPhase
         && !pomodoroStatus.pomodoroId.startsWith('optimistic-pomodoro-'));
@@ -1805,70 +1686,24 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     }}
                 >
                     {pomodoroCompleted ? (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minHeight: 52 }}>
-                            <CheckCircleOutlineIcon color="success" />
-                            <Box sx={{ flex: 1, textAlign: 'left' }}>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Pomodoro complete</Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                    {formatFocusDuration(totalFocusSeconds)} focused · {completedFocusSessions} of {pomodoroStatus?.numFocuses ?? 0} sessions completed
-                                </Typography>
-                            </Box>
-                            <Button
-                                size="small"
-                                variant="outlined"
-                                onClick={event => {
-                                    event.stopPropagation();
-                                    clearCompletedPomodoroAfterExitRef.current = true;
-                                    onPomodoroActiveChange?.(task.taskId, false, { animate: true });
-                                }}
-                            >
-                                Dismiss
-                            </Button>
-                        </Box>
+                        <PomodoroCompleteSummary
+                            totalFocusSeconds={totalFocusSeconds}
+                            completedFocusSessions={completedFocusSessions}
+                            numFocuses={pomodoroStatus?.numFocuses ?? 0}
+                            onDismiss={() => {
+                                clearCompletedPomodoroAfterExitRef.current = true;
+                                onPomodoroActiveChange?.(task.taskId, false, { animate: true });
+                            }}
+                        />
                     ) : !isActive ? (
-                        <Box component="form" onSubmit={event => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            handleStart();
-                        }}>
-                            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mb: 1.5 }}>
-                                {(
-                                    [
-                                        { key: 'focusDuration',      label: `Focus (${pomodoroConfig.durationUnit})`       },
-                                        { key: 'shortBreakDuration', label: `Short break (${pomodoroConfig.durationUnit})` },
-                                        { key: 'longBreakDuration',  label: `Long break (${pomodoroConfig.durationUnit})`  },
-                                        { key: 'numFocuses',         label: 'Sessions'          },
-                                    ] as const
-                                ).map(({ key, label }) => (
-                                    <PomodoroNumberField
-                                        key={key}
-                                        name={key}
-                                        label={label}
-                                        value={form[key]}
-                                        onChange={value => updatePomodoroForm({ [key]: value })}
-                                        max={pomodoroFieldMax[key]}
-                                    />
-                                ))}
-                            </Box>
-                            <Button
-                                variant="outlined"
-                                size="small"
-                                fullWidth
-                                type="submit"
-                                disabled={!canStartPomodoro}
-                                startIcon={<PlayArrowIcon />}
-                                sx={{
-                                    borderColor: 'primary',
-                                    color: 'primary',
-                                    '&:hover': {
-                                        borderColor: 'primary',
-                                        backgroundColor: alpha(activeAccent, 0.08),
-                                    },
-                                }}
-                            >
-                                Start
-                            </Button>
-                        </Box>
+                        <PomodoroSetupForm
+                            form={form}
+                            durationUnit={pomodoroConfig.durationUnit}
+                            fieldMax={pomodoroFieldMax}
+                            canStart={canStartPomodoro}
+                            onChange={updatePomodoroForm}
+                            onStart={handleStart}
+                        />
                     ) : pomodoroStatusPending ? (
                         <Box
                             role="status"
@@ -1883,192 +1718,20 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                             <CircularProgress size={18} />
                         </Box>
                     ) : (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Box sx={{
-                                textAlign: waitingForPhase ? 'left' : 'center',
-                                minHeight: 34,
-                                ml: waitingForPhase ? 1 : 0.5,
-                                display: 'flex',
-                                justifyContent: 'center',
-                                alignItems: waitingForPhase ? 'flex-start' : 'center',
-                                flexDirection: 'column',
-                            }}>
-                                <Typography
-                                    variant={waitingForPhase ? 'h5' : 'caption'}
-                                    sx={{
-                                        display: 'block',
-                                        textAlign: waitingForPhase ? 'left' : 'center',
-                                        fontWeight: 600,
-                                        textTransform: 'uppercase',
-                                        letterSpacing: waitingForPhase ? 1.1 : 1,
-                                        lineHeight: waitingForPhase ? 0.95 : undefined,
-                                        whiteSpace: waitingForPhase ? 'normal' : 'nowrap',
-                                        color: isBreak ? pomodoroGreen : accent,
-                                    }}
-                                >
-                                    {waitingForPhase
-                                        ? (pomodoroStatus!.phase === 'WAITING_FOR_BREAK' ? ['BREAK', 'TIME'] : ['WORK', 'TIME']).map(word => (
-                                            <Box component="span" key={word} sx={{ display: 'block' }}>
-                                                {word}
-                                            </Box>
-                                        ))
-                                        : isBreak ? 'BREAK TIME' : 'WORK TIME'}
-                                </Typography>
-                                {!waitingForPhase && (
-                                    <Box
-                                        sx={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: 0.5,
-                                            '& .pomodoro-time-adjustment': {
-                                                opacity: 0,
-                                                transition: 'opacity 120ms ease',
-                                                color: 'text.secondary',
-                                            },
-                                            '&:hover .pomodoro-time-adjustment, &:focus-within .pomodoro-time-adjustment': {
-                                                opacity: 1,
-                                            },
-                                            '@media (hover: none)': {
-                                                '& .pomodoro-time-adjustment': { opacity: 1 },
-                                            },
-                                        }}
-                                    >
-                                        <Tooltip title={`Remove ${timeAdjustmentLabel}`} placement="top">
-                                            <span>
-                                                <IconButton
-                                                    className="pomodoro-time-adjustment"
-                                                    size="small"
-                                                    disabled={!canAdjustTime}
-                                                    aria-label={`Remove ${timeAdjustmentLabel} from the current Pomodoro phase`}
-                                                    onClick={event => {
-                                                        event.stopPropagation();
-                                                        handleTimeAdjustment(-timeAdjustmentMinutes * 60);
-                                                    }}
-                                                    sx={{
-                                                        width: 20,
-                                                        height: 20,
-                                                        p: 0,
-                                                        '&:hover': {
-                                                            color: 'primary.main',
-                                                            backgroundColor: alpha(activeAccent, 0.08),
-                                                        },
-                                                    }}
-                                                >
-                                                    <RemoveIcon sx={{ fontSize: 17 }} />
-                                                </IconButton>
-                                            </span>
-                                        </Tooltip>
-                                        <Typography
-                                            variant="h4"
-                                            sx={{
-                                                ...TIMER_DIGITS_SX,
-                                                flexShrink: 0,
-                                                fontWeight: 700,
-                                                lineHeight: 1,
-                                            }}
-                                        >
-                                            {formatSeconds(pomodoroStatus!.secondsUntilNextTransition)}
-                                        </Typography>
-                                        <Tooltip title={`Add ${timeAdjustmentLabel}`} placement="top">
-                                            <span>
-                                                <IconButton
-                                                    className="pomodoro-time-adjustment"
-                                                    size="small"
-                                                    disabled={!canAdjustTime}
-                                                    aria-label={`Add ${timeAdjustmentLabel} to the current Pomodoro phase`}
-                                                    onClick={event => {
-                                                        event.stopPropagation();
-                                                        handleTimeAdjustment(timeAdjustmentMinutes * 60);
-                                                    }}
-                                                    sx={{
-                                                        width: 20,
-                                                        height: 20,
-                                                        p: 0,
-                                                        '&:hover': {
-                                                            color: 'primary.main',
-                                                            backgroundColor: alpha(activeAccent, 0.08),
-                                                        },
-                                                    }}
-                                                >
-                                                    <AddIcon sx={{ fontSize: 17 }} />
-                                                </IconButton>
-                                            </span>
-                                        </Tooltip>
-                                    </Box>
-                                )}
-                            </Box>
-
-                            {/* Focus dots — lighter inactive shade */}
-                            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                                {Array.from({ length: pomodoroStatus!.numFocuses }).map((_, i) => (
-                                    <Box
-                                        key={i}
-                                        sx={{
-                                            width: 8, height: 8, borderRadius: '50%',
-                                            backgroundColor: i < pomodoroStatus!.currentFocusNumber
-                                                ? accent
-                                                : alpha(accent, 0.12),
-                                            transition: 'background-color 0.3s',
-                                        }}
-                                    />
-                                ))}
-                            </Box>
-
-                            <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto' }}>
-                                <WhiteNoiseControl size="small" />
-                                {(waitingForPhase || !isBreak) && (
-                                    <Tooltip title={playPauseLabel}>
-                                        <span>
-                                            <IconButton
-                                                size="small"
-                                                onClick={handlePlayPause}
-                                                color={pomodoroStatus!.phase === 'WAITING_FOR_BREAK' ? 'inherit' : 'primary'}
-                                                aria-label={playPauseLabel}
-                                                sx={pomodoroStatus!.phase === 'WAITING_FOR_BREAK' ? { color: pomodoroGreen } : undefined}
-                                            >
-                                                {!waitingForPhase && pomodoroStatus!.sessionRunning ? <PauseIcon /> : <PlayArrowIcon />}
-                                            </IconButton>
-                                        </span>
-                                    </Tooltip>
-                                )}
-                                {pomodoroStatus!.phase === 'BREAK' && (
-                                    <Tooltip title="End break and start the next focus session">
-                                        <span>
-                                            <IconButton
-                                                size="small"
-                                                onClick={handleFinishBreak}
-                                                color="primary"
-                                                aria-label="End break and start the next focus session"
-                                            >
-                                                <SkipNextIcon />
-                                            </IconButton>
-                                        </span>
-                                    </Tooltip>
-                                )}
-                                <Tooltip title={canStartBreakEarly ? 'End session options' : 'End Pomodoro session'}>
-                                    <span>
-                                        <IconButton
-                                            size="small"
-                                            onClick={toggleEndOptions}
-                                            color="inherit"
-                                            aria-label={canStartBreakEarly ? 'Open end session options' : 'End Pomodoro session'}
-                                            aria-haspopup={canStartBreakEarly ? 'true' : undefined}
-                                            aria-expanded={canStartBreakEarly ? Boolean(endOptionsAnchor) : undefined}
-                                            sx={{
-                                                color: 'error.light',
-                                                '&:hover': {
-                                                    color: 'error.main',
-                                                    backgroundColor: alpha(theme.palette.error.main, 0.08),
-                                                },
-                                            }}
-                                        >
-                                            <StopIcon />
-                                        </IconButton>
-                                    </span>
-                                </Tooltip>
-                            </Box>
-                        </Box>
+                        <PomodoroRunningControls
+                            status={pomodoroStatus!}
+                            waitingForPhase={waitingForPhase}
+                            isBreak={isBreak}
+                            timeAdjustmentMinutes={timeAdjustmentMinutes}
+                            canAdjustTime={canAdjustTime}
+                            onAdjustTime={handleTimeAdjustment}
+                            playPauseLabel={playPauseLabel}
+                            onPlayPause={handlePlayPause}
+                            onFinishBreak={handleFinishBreak}
+                            canStartBreakEarly={canStartBreakEarly}
+                            endOptionsOpen={Boolean(endOptionsAnchor)}
+                            onToggleEndOptions={toggleEndOptions}
+                        />
                     )}
                 </Box>
             </Collapse>
