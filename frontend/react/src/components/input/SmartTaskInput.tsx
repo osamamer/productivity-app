@@ -24,6 +24,7 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
 import { TaskToCreate } from '../../types/TaskToCreate';
 import { formatReminderDateTime } from '../task/taskReminderFormatting';
+import { formatLocalDateTime } from '../../services/utils/taskDate';
 
 type SmartTaskInputProps = {
     onSubmit: (taskToCreate: TaskToCreate) => void;
@@ -60,15 +61,6 @@ const removeCommands = (value: string, commands: RegExp) => value
     .replace(commands, '')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
-
-function formatLocalDateTime(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hour = String(date.getHours()).padStart(2, '0');
-    const minute = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hour}:${minute}:00`;
-}
 
 function dateAtCurrentTime(date: Date): string {
     const currentTime = new Date();

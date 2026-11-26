@@ -91,7 +91,7 @@ import {
     type TodayDropPlacement,
 } from './home/homeTypes';
 import { groupExpansionId } from './home/homeGroupExpansion';
-import { deleteTasksForScope, tasksForDeleteScope } from './home/homeTaskDeletion';
+import { deleteTasksForScope, tasksForDeleteScope } from '../services/utils/taskDeletionScope';
 import { homeActiveExpansionStorageKey, readHomeActiveExpansion } from './home/homeActiveExpansion';
 import {
     EDGE_DROP_ZONE_LIST_OVERLAP,

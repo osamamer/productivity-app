@@ -22,3 +22,10 @@ export function taskDateKey(value: string): string {
 export function dateKey(date: Date): string {
     return dateKeyFromDate(date);
 }
+
+/** A backend LocalDateTime string (minute precision, no zone) for a local date. */
+export function formatLocalDateTime(date: Date): string {
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+        + `T${pad(date.getHours())}:${pad(date.getMinutes())}:00`;
+}

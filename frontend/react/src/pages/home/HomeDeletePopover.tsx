@@ -1,5 +1,5 @@
 import { Box, Button, CircularProgress, Popover, Typography } from '@mui/material';
-import { requestHasRecurringTasks } from './homeTaskDeletion';
+import { requestHasRecurringTasks } from '../../services/utils/taskDeletionScope';
 import type { DeleteRequest, DeleteScope } from './homeTypes';
 
 type HomeDeletePopoverProps = {

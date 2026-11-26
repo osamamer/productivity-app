@@ -1,12 +1,23 @@
-import { mergeTaskDeletionReceipts, taskService } from '../../services/api';
-import type { TaskDeletionReceipt } from '../../services/api';
+import { mergeTaskDeletionReceipts, taskService } from '../api';
+import type { TaskDeletionReceipt } from '../api';
 import { Task } from '../../types/Task';
-import type { DeleteRequest, DeleteScope } from './homeTypes';
+import type { TaskGroup } from '../../types/TaskGroup';
+
+/** What the user asked to delete: one task, a selection, or a whole group. */
+export type DeleteRequest =
+    | { kind: 'single' | 'bulk'; tasks: Task[]; anchorEl: HTMLElement }
+    | { kind: 'group'; group: TaskGroup; tasks: Task[]; anchorEl: HTMLElement };
+/**
+ * For recurring tasks: just these occurrences, every occurrence after the earliest chosen one
+ * (the chosen one stays and the series ends there), or the whole series.
+ */
+export type DeleteScope = 'occurrence' | 'future' | 'series';
 
 export function requestHasRecurringTasks(request: DeleteRequest): boolean {
     return request.tasks.some(task => Boolean(task.taskSeriesId));
 }
 
+/** The tasks a delete in this scope removes, including other loaded occurrences of the same series. */
 export function tasksForDeleteScope(request: DeleteRequest, scope: DeleteScope, allTasks: Task[]): Task[] {
     if (scope === 'occurrence') return request.tasks;
 
@@ -48,6 +59,10 @@ export function tasksForDeleteScope(request: DeleteRequest, scope: DeleteScope, 
     ));
 }
 
+/**
+ * Deletes the tasks one request at a time. If one fails, the deletions that already succeeded are
+ * restored before the error is rethrown, so a failed delete never leaves half a selection gone.
+ */
 export async function deleteTasksForScope(tasks: Task[], scope: DeleteScope): Promise<TaskDeletionReceipt | null> {
     const deletedSeriesIds = new Set<string>();
     const options = { notifyResource: false };

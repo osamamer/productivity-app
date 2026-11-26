@@ -7,10 +7,7 @@ export type DropEdge = 'before' | 'after';
 export type GroupDropIntent = DropEdge | 'inside';
 export type GroupTaskDropPlacement = { targetTaskId: string; edge: DropEdge };
 export type BulkAction = 'complete' | 'reopen' | 'move-to-today' | 'move-to-date' | 'clear-date';
-export type DeleteRequest =
-    | { kind: 'single' | 'bulk'; tasks: Task[]; anchorEl: HTMLElement }
-    | { kind: 'group'; group: TaskGroup; tasks: Task[]; anchorEl: HTMLElement };
-export type DeleteScope = 'occurrence' | 'future' | 'series';
+export type { DeleteRequest, DeleteScope } from '../../services/utils/taskDeletionScope';
 export type TaskContextMenuState = { task: Task; top: number; left: number; anchorEl: HTMLElement };
 export type TaskReminderEditorState = { taskId: string; top: number; left: number };
 export type TaskFeedback = {
