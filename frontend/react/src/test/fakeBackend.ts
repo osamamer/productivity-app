@@ -1,4 +1,5 @@
 import { http, HttpResponse, type HttpHandler } from 'msw';
+import type { CalendarEvent } from '../types/CalendarEvent';
 import type { Task } from '../types/Task';
 import type { TaskGroup } from '../types/TaskGroup';
 import { API } from './server';
@@ -28,6 +29,31 @@ export function makeTask(overrides: TaskOverrides): Task {
         taskSeriesId: null,
         seriesOccurrenceAt: null,
         skipped: false,
+        ...overrides,
+    };
+}
+
+export function makeEvent(overrides: Partial<CalendarEvent> & Pick<CalendarEvent, 'title'>): CalendarEvent {
+    return {
+        id: `event-${nextId++}`,
+        calendarId: 'calendar-1',
+        description: '',
+        allDay: false,
+        startDate: null,
+        endDate: null,
+        startTime: null,
+        endTime: null,
+        timeZone: 'UTC',
+        status: 'CONFIRMED',
+        recurrenceFrequency: 'NONE',
+        recurrenceEndDate: null,
+        recurrenceInterval: null,
+        recurrenceUnit: null,
+        cancelledOccurrenceKeys: [],
+        occurrenceOverrides: [],
+        reminderMinutesBefore: null,
+        createdAt: '2026-11-20T09:00:00Z',
+        updatedAt: '2026-11-20T09:00:00Z',
         ...overrides,
     };
 }
@@ -62,10 +88,11 @@ function localDate(value: string | null): string | null {
  * reorder and delete tasks. Everything Home reads but these tests do not exercise
  * answers empty.
  */
-export function createFakeBackend({ today, tasks = [], groups = [] }: {
+export function createFakeBackend({ today, tasks = [], groups = [], events = [] }: {
     today: string;
     tasks?: Task[];
     groups?: TaskGroup[];
+    events?: CalendarEvent[];
 }): FakeBackend {
     const backend: FakeBackend = { tasks: [...tasks], groups: [...groups], requests: [], handlers: [] };
     const deleted: Task[] = [];
@@ -143,7 +170,7 @@ export function createFakeBackend({ today, tasks = [], groups = [] }: {
         http.get(`${API}/api/v1/pomodoro/status`, () => new HttpResponse(null, { status: 204 })),
         http.get(`${API}/api/v1/activity-sessions/current`, () => new HttpResponse(null, { status: 204 })),
         http.get(`${API}/api/v1/mental-state/check-ins`, () => HttpResponse.json([])),
-        http.get(`${API}/api/v1/events`, () => HttpResponse.json([])),
+        http.get(`${API}/api/v1/events`, () => HttpResponse.json(events)),
         http.get(`${API}/api/v1/calendars`, () => HttpResponse.json([])),
         http.get(`${API}/api/v1/*`, () => HttpResponse.json([])),
     ];

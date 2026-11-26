@@ -2,6 +2,7 @@ import { render } from '@testing-library/react';
 import { vi } from 'vitest';
 import { server } from './server';
 import { createFakeBackend, type FakeBackend } from './fakeBackend';
+import type { CalendarEvent } from '../types/CalendarEvent';
 import type { Task } from '../types/Task';
 import type { TaskGroup } from '../types/TaskGroup';
 
@@ -10,14 +11,15 @@ import type { TaskGroup } from '../types/TaskGroup';
  * Modules are reloaded per call because the task services keep module-level caches
  * that would otherwise leak one test's tasks into the next.
  */
-export async function renderHome({ tasks, groups, now = '2026-11-26T10:00:00Z' }: {
+export async function renderHome({ tasks, groups, events, now = '2026-11-26T10:00:00Z' }: {
     tasks?: Task[];
     groups?: TaskGroup[];
+    events?: CalendarEvent[];
     now?: string;
 } = {}): Promise<FakeBackend> {
     vi.useFakeTimers({ now: new Date(now), shouldAdvanceTime: true, toFake: ['Date'] });
     vi.resetModules();
-    const backend = createFakeBackend({ today: now.slice(0, 10), tasks, groups });
+    const backend = createFakeBackend({ today: now.slice(0, 10), tasks, groups, events });
     server.use(...backend.handlers);
 
     const [{ MemoryRouter }, { AppThemeProvider }, { UserProvider }, { PomodoroProvider }, { TaskProvider }, { HomePage }] = await Promise.all([

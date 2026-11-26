@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { makeTask } from '../test/fakeBackend';
+import { makeEvent, makeTask } from '../test/fakeBackend';
 import { renderHome } from '../test/renderHome';
 import { API, server } from '../test/server';
 
@@ -124,5 +124,27 @@ describe('Home (labor)', () => {
 
         expect(await screen.findByText('Morning routine')).toBeInTheDocument();
         expect(screen.getByText('Write report')).toBeInTheDocument();
+    });
+
+    it("lists today's calendar events and leaves other days' off", async () => {
+        await renderHome({
+            events: [
+                makeEvent({ title: 'Dentist', startDate: TODAY, endDate: TODAY, startTime: `${TODAY}T14:00:00`, endTime: `${TODAY}T15:00:00` }),
+                makeEvent({ title: 'Conference', startDate: '2026-12-02', endDate: '2026-12-02', startTime: '2026-12-02T09:00:00', endTime: '2026-12-02T17:00:00' }),
+            ],
+        });
+
+        expect(await screen.findByText('Dentist')).toBeInTheDocument();
+        expect(screen.queryByText('Conference')).not.toBeInTheDocument();
+    });
+
+    it("keeps the task list working when an event can't be read", async () => {
+        await renderHome({
+            tasks: [todayTask('Write report')],
+            events: [makeEvent({ title: 'Broken', startDate: TODAY, endDate: TODAY, startTime: 'not a time', endTime: 'not a time' })],
+        });
+
+        expect(await screen.findByText('Write report')).toBeInTheDocument();
+        expect(await screen.findByText("Today's events could not be shown.")).toBeInTheDocument();
     });
 });

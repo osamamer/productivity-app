@@ -71,6 +71,7 @@ import { findKeyboardDeleteAnchor, useKeyboardDelete } from '../hooks/useKeyboar
 import { TaskReminderPicker } from '../components/task/TaskReminderPicker';
 import { usePomodoro } from '../hooks/usePomodoro';
 import { TodayEventsSection } from '../components/home/TodayEventsSection';
+import { SectionErrorBoundary } from '../components/SectionErrorBoundary';
 import {
     type ActiveDrag,
     type ActiveExpansion,
@@ -3646,7 +3647,9 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
                                         : 'none',
                                 }}
                             >
-                                <TodayEventsSection dayStart={homeDisplayDay} />
+                                <SectionErrorBoundary label="Today's events">
+                                    <TodayEventsSection dayStart={homeDisplayDay} />
+                                </SectionErrorBoundary>
                             </Box>
                         </Collapse>
 
