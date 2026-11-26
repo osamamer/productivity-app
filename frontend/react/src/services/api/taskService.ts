@@ -7,7 +7,7 @@ import { TaskPomodoroStats, TodayFocusSummary } from '../../types/TaskPomodoroSt
 import { invalidateTaskPomodoroStats, setCachedTaskPomodoroStats } from '../cache/taskPomodoroStatsCache';
 import { CachedResource } from '../cache/ttlCache';
 import { getAuthCacheScope } from '../utils/authHeaders';
-import { getHomeDisplayDate } from '../utils/homeDay';
+import { getHomeDisplayDate, homeDayTailDateKey, isInHomeDay } from '../utils/homeDay';
 import { getRuntimeUserPreference } from '../userPreferenceStore';
 import { dateKey } from '../utils/taskDate';
 import { clearTaskSubtasksCache, invalidateTaskSubtasks, loadTaskSubtasks } from '../cache/taskSubtasksCache';
@@ -259,6 +259,18 @@ function homeOlderTasksCacheKey(): string {
     return `${getAuthCacheScope()}:home-older-tasks:${currentTaskDateKey()}`;
 }
 
+async function fetchTasksScheduledOn(date: string, forceRefresh: boolean): Promise<Task[]> {
+    const key = homeDayTasksCacheKey(date);
+    if (forceRefresh) homeDayTasksCache.invalidate(key);
+    return homeDayTasksCache.get(key, async () => {
+        const response = await apiFetch(`${TASK_URL}?date=${encodeURIComponent(date)}`, {
+            headers: getAuthHeaders(),
+        });
+        if (!response.ok) throw new Error('Failed to fetch Home tasks for the selected day');
+        return response.json() as Promise<Task[]>;
+    });
+}
+
 function homeDayTasksCacheKey(date: string): string {
     return `${getAuthCacheScope()}:home-day-tasks:${date}`;
 }
@@ -490,24 +502,23 @@ export const taskService = {
         return filterDeletedTasks(tasks);
     },
 
-    async getHomeTasksForDate(date: string, forceRefresh = false): Promise<Task[]> {
-        const key = homeDayTasksCacheKey(date);
-        if (forceRefresh) homeDayTasksCache.invalidate(key);
-
-        const tasks = await homeDayTasksCache.get(key, async () => {
-            const response = await apiFetch(`${TASK_URL}?date=${encodeURIComponent(date)}`, {
-                headers: getAuthHeaders(),
-            });
-            if (!response.ok) throw new Error('Failed to fetch Home tasks for the selected day');
-            return response.json() as Promise<Task[]>;
-        });
-        return filterDeletedTasks(tasks);
+    /** Tasks in the Home day: its date plus the next date's hours before the day-end hour. */
+    async getHomeTasksForDate(date: string, dayEndHour = 0, forceRefresh = false): Promise<Task[]> {
+        const tailDate = homeDayTailDateKey(date, dayEndHour);
+        const [dayTasks, tailTasks] = await Promise.all([
+            fetchTasksScheduledOn(date, forceRefresh),
+            tailDate ? fetchTasksScheduledOn(tailDate, forceRefresh) : Promise.resolve([] as Task[]),
+        ]);
+        return filterDeletedTasks([
+            ...dayTasks,
+            ...tailTasks.filter(task => isInHomeDay(task.scheduledPerformDateTime, date, dayEndHour)),
+        ]);
     },
 
-    async getHomeTaskSnapshot(displayDate: string, forceRefresh = false): Promise<Task[]> {
+    async getHomeTaskSnapshot(displayDate: string, dayEndHour = 0, forceRefresh = false): Promise<Task[]> {
         const olderKey = homeOlderTasksCacheKey();
         if (forceRefresh) homeOlderTasksCache.invalidate(olderKey);
-        const dayTasksPromise = this.getHomeTasksForDate(displayDate, forceRefresh);
+        const dayTasksPromise = this.getHomeTasksForDate(displayDate, dayEndHour, forceRefresh);
         const [dayTasks, older] = await Promise.all([
             dayTasksPromise,
             homeOlderTasksCache.get(olderKey, async () => {

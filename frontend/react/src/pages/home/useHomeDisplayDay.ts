@@ -23,5 +23,5 @@ export function useHomeDisplayDay() {
         return () => window.clearTimeout(timeout);
     }, [homeDayEndHour, homeDisplayDayKey]);
 
-    return { homeDisplayDay, homeDisplayDayKey };
+    return { homeDisplayDay, homeDisplayDayKey, homeDayEndHour };
 }

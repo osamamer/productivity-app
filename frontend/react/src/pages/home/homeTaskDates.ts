@@ -1,6 +1,7 @@
 import { Task } from '../../types/Task';
 import { TaskToCreate } from '../../types/TaskToCreate';
-import { formatLocalDateTime, taskDateKey } from '../../services/utils/taskDate';
+import { formatLocalDateTime } from '../../services/utils/taskDate';
+import { isInHomeDay } from '../../services/utils/homeDay';
 
 export { formatLocalDateTime };
 
@@ -23,10 +24,8 @@ export function formatTaskDateForFeedback(value: string): string {
     });
 }
 
-export function isScheduledForHomeDay(task: Task, homeDayKey: string): boolean {
-    return task.scheduledPerformDateTime !== null
-        && task.scheduledPerformDateTime !== undefined
-        && taskDateKey(task.scheduledPerformDateTime) === homeDayKey;
+export function isScheduledForHomeDay(task: Task, homeDayKey: string, dayEndHour: number): boolean {
+    return isInHomeDay(task.scheduledPerformDateTime, homeDayKey, dayEndHour);
 }
 
 export function moveTaskDateToHomeDay(task: Task, homeDay: Date): string {

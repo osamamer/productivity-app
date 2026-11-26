@@ -26,6 +26,10 @@ function currentBucketDateKey(): string {
     return dateKey(getHomeDisplayDate(new Date(), getRuntimeUserPreference('homeDayEndHour')));
 }
 
+function splitByHomeDay(tasks: Task[], displayDate: string) {
+    return splitTasksByDate(tasks, displayDate, getRuntimeUserPreference('homeDayEndHour'));
+}
+
 function reuseTaskList(previous: Task[], next: Task[]): Task[] {
     if (previous.length !== next.length) return next;
 
@@ -45,7 +49,7 @@ function uniqueTasksById(tasks: Task[]): Task[] {
 function withTaskBuckets(previous: TaskState, allTasks: Task[]): TaskState {
     const uniqueTasks = uniqueTasksById(allTasks);
     const bucketDateKey = currentBucketDateKey();
-    const grouped = splitTasksByDate(uniqueTasks, bucketDateKey);
+    const grouped = splitByHomeDay(uniqueTasks, bucketDateKey);
 
     return {
         ...previous,
@@ -202,7 +206,7 @@ export function useTaskManager() {
                     ? false
                     : undefined;
                 const loadedTaskBuckets = loadMode === 'taskPage' && preservePageState
-                    ? splitTasksByDate(taskStateRef.current.allTasks, currentBucketDateKey())
+                    ? splitByHomeDay(taskStateRef.current.allTasks, currentBucketDateKey())
                     : null;
                 const taskPageBatchSize = loadedTaskBuckets
                     ? Math.max(
@@ -220,7 +224,8 @@ export function useTaskManager() {
                     : null;
                 const tasks = taskPageSnapshot?.tasks ?? (loadMode === 'home'
                     ? await taskService.getHomeTaskSnapshot(
-                        dateKey(getHomeDisplayDate(new Date(), getRuntimeUserPreference('homeDayEndHour'))),
+                        currentBucketDateKey(),
+                        getRuntimeUserPreference('homeDayEndHour'),
                         force,
                     )
                     : await taskService.getAllMainTasks(force));
@@ -282,8 +287,11 @@ export function useTaskManager() {
         const requestDataGeneration = taskDataGenerationRef.current;
         try {
             const displayDate = currentBucketDateKey();
-            const dayTasks = await taskService.getHomeTasksForDate(displayDate);
-            const tasks = splitTasksByDate(uniqueTasksById(dayTasks), displayDate).today;
+            const dayTasks = await taskService.getHomeTasksForDate(
+                displayDate,
+                getRuntimeUserPreference('homeDayEndHour'),
+            );
+            const tasks = splitByHomeDay(uniqueTasksById(dayTasks), displayDate).today;
             if (taskDataGenerationRef.current !== requestDataGeneration
                 || displayDate !== currentBucketDateKey()) return;
             todayTasksLoadedRef.current = true;
@@ -295,7 +303,7 @@ export function useTaskManager() {
                 // A Today request can race a schedule update; trust the canonical snapshot for known task IDs.
                 const allTasksById = new Map(prev.allTasks.map(task => [task.taskId, task] as const));
                 const todayTasksById = new Map(
-                    splitTasksByDate(prev.allTasks, displayDate).today.map(task => [task.taskId, task] as const),
+                    splitByHomeDay(prev.allTasks, displayDate).today.map(task => [task.taskId, task] as const),
                 );
                 const reconciledTodayTasks = new Map<string, Task>();
                 tasks.forEach(task => {

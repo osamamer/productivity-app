@@ -12,7 +12,7 @@ describe('homeTodayTasks', () => {
         const tomorrow = makeTask({ name: 'Tomorrow', scheduledPerformDateTime: at('2026-11-27') });
 
         const result = homeTodayTasks({
-            allTasks: [today, subtask, tomorrow], todayTasks: [], homeDayKey: DAY,
+            allTasks: [today, subtask, tomorrow], todayTasks: [], homeDayKey: DAY, dayEndHour: 0,
             activeTaskId: null, resolvedActiveTask: null,
         });
 
@@ -24,7 +24,7 @@ describe('homeTodayTasks', () => {
         const latest = { ...stale, name: 'New name' };
 
         const result = homeTodayTasks({
-            allTasks: [latest], todayTasks: [stale], homeDayKey: DAY,
+            allTasks: [latest], todayTasks: [stale], homeDayKey: DAY, dayEndHour: 0,
             activeTaskId: null, resolvedActiveTask: null,
         });
 
@@ -36,22 +36,34 @@ describe('homeTodayTasks', () => {
         const moved = { ...stale, scheduledPerformDateTime: at('2026-11-30') };
 
         const result = homeTodayTasks({
-            allTasks: [moved], todayTasks: [stale], homeDayKey: DAY,
+            allTasks: [moved], todayTasks: [stale], homeDayKey: DAY, dayEndHour: 0,
             activeTaskId: null, resolvedActiveTask: null,
         });
 
         expect(result).toEqual([]);
     });
 
+    it('includes the next morning before the day-end hour', () => {
+        const lateNight = makeTask({ name: 'Late night', scheduledPerformDateTime: '2026-11-27T02:30:00' });
+        const nextMorning = makeTask({ name: 'Next morning', scheduledPerformDateTime: '2026-11-27T04:00:00' });
+
+        const result = homeTodayTasks({
+            allTasks: [lateNight, nextMorning], todayTasks: [], homeDayKey: DAY, dayEndHour: 4,
+            activeTaskId: null, resolvedActiveTask: null,
+        });
+
+        expect(result.map(task => task.name)).toEqual(['Late night']);
+    });
+
     it('includes the task with the running Pomodoro even from another day', () => {
         const focused = makeTask({ name: 'Focused', scheduledPerformDateTime: at('2026-11-20') });
 
         const fromState = homeTodayTasks({
-            allTasks: [focused], todayTasks: [], homeDayKey: DAY,
+            allTasks: [focused], todayTasks: [], homeDayKey: DAY, dayEndHour: 0,
             activeTaskId: focused.taskId, resolvedActiveTask: null,
         });
         const fetchedSeparately = homeTodayTasks({
-            allTasks: [], todayTasks: [], homeDayKey: DAY,
+            allTasks: [], todayTasks: [], homeDayKey: DAY, dayEndHour: 0,
             activeTaskId: focused.taskId, resolvedActiveTask: focused,
         });
 
@@ -109,7 +121,7 @@ describe('olderHomeTasks', () => {
         const subtask = makeTask({ name: 'Sub', parentId: older.taskId, scheduledPerformDateTime: at('2026-11-20') });
         const rescheduledToday = makeTask({ name: 'Now today', scheduledPerformDateTime: at(DAY) });
 
-        const result = olderHomeTasks([older, finished, subtask, rescheduledToday], DAY, new Set());
+        const result = olderHomeTasks([older, finished, subtask, rescheduledToday], DAY, 0, new Set());
 
         expect(result.map(task => task.name)).toEqual(['Older']);
     });

@@ -156,7 +156,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     const restoredPomodoroTaskId = restoredPomodoro?.associatedTaskId ?? null;
     const location = useLocation();
     const navigate = useNavigate();
-    const { homeDisplayDay, homeDisplayDayKey } = useHomeDisplayDay();
+    const { homeDisplayDay, homeDisplayDayKey, homeDayEndHour } = useHomeDisplayDay();
     const [animateGreeting] = useState(() => !hasAnimatedHomeGreeting);
     const [activeExpansion, setActiveExpansion] = useState<ActiveExpansion>(() => (
         restoredPomodoroTaskId
@@ -352,12 +352,13 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
         allTasks,
         todayTasks,
         homeDayKey: homeDisplayDayKey,
+        dayEndHour: homeDayEndHour,
         activeTaskId: activePomodoroTaskIdForHome,
         resolvedActiveTask: resolvedActivePomodoroTask,
-    }), [activePomodoroTaskIdForHome, allTasks, homeDisplayDayKey, resolvedActivePomodoroTask, todayTasks]);
+    }), [activePomodoroTaskIdForHome, allTasks, homeDayEndHour, homeDisplayDayKey, resolvedActivePomodoroTask, todayTasks]);
     const todayTasksForCompletion = useMemo(() => homeTodayTasks.filter(task => (
-        isScheduledForHomeDay(task, homeDisplayDayKey) && !pendingDeletedTaskIdSet.has(task.taskId)
-    )), [homeDisplayDayKey, homeTodayTasks, pendingDeletedTaskIdSet]);
+        isScheduledForHomeDay(task, homeDisplayDayKey, homeDayEndHour) && !pendingDeletedTaskIdSet.has(task.taskId)
+    )), [homeDayEndHour, homeDisplayDayKey, homeTodayTasks, pendingDeletedTaskIdSet]);
     const allTodayTasksComplete = todayTasksForCompletion.length > 0
         && todayTasksForCompletion.every(task => task.completed);
 
@@ -384,8 +385,8 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
             pendingDeletedTaskIdSet, pendingHomeDateTaskIds, showCompletionDetails],
     );
     const olderTasks = useMemo(
-        () => olderHomeTasks(pastTasks, homeDisplayDayKey, pendingDeletedTaskIdSet),
-        [homeDisplayDayKey, pastTasks, pendingDeletedTaskIdSet],
+        () => olderHomeTasks(pastTasks, homeDisplayDayKey, homeDayEndHour, pendingDeletedTaskIdSet),
+        [homeDayEndHour, homeDisplayDayKey, pastTasks, pendingDeletedTaskIdSet],
     );
     const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
     const selectedGroupIdSet = useMemo(() => new Set(selectedGroupIds), [selectedGroupIds]);
@@ -683,7 +684,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
             const pendingEdit = pendingHomeDateEditsRef.current.get(taskId);
             const originalDateTime = pendingEdit?.originalDateTime ?? originalTask.scheduledPerformDateTime;
             const latestDateTime = updates.scheduledPerformDateTime || null;
-            if (pendingEdit || isScheduledForHomeDay(originalTask, homeDisplayDayKey)) {
+            if (pendingEdit || isScheduledForHomeDay(originalTask, homeDisplayDayKey, homeDayEndHour)) {
                 pendingHomeDateEditsRef.current.set(taskId, {
                     originalDateTime,
                     latestDateTime,
@@ -706,7 +707,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
             if (originalTask) updateTaskInState(taskId, originalTask);
             await refreshTaskBuckets(true);
         }
-    }, [allTasks, homeDisplayDayKey, homeTodayTasks, refreshTaskBuckets, updateTaskInState]);
+    }, [allTasks, homeDayEndHour, homeDisplayDayKey, homeTodayTasks, refreshTaskBuckets, updateTaskInState]);
 
     const handleScheduledDateEditComplete = useCallback((taskId: string) => {
         const pendingEdit = pendingHomeDateEditsRef.current.get(taskId);
@@ -1098,7 +1099,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
             if (action === 'move-to-date' && scheduledDateTime
                 && taskDateKey(scheduledDateTime) === homeDisplayDayKey) {
                 await appendTasksToTodayOrder(
-                    tasksToUpdate.filter(task => !isScheduledForHomeDay(task, homeDisplayDayKey))
+                    tasksToUpdate.filter(task => !isScheduledForHomeDay(task, homeDisplayDayKey, homeDayEndHour))
                         .map(task => task.taskId),
                 );
             }

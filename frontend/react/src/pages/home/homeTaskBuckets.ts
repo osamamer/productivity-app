@@ -7,15 +7,19 @@ type HomeTodayInput = {
     allTasks: Task[];
     todayTasks: Task[];
     homeDayKey: string;
+    dayEndHour: number;
     activeTaskId: string | null;
     resolvedActiveTask: Task | null;
 };
 
 /**
- * Today's main tasks for Home: the latest copy of every task scheduled for the Home day, plus
+ * Today's main tasks for Home: the latest copy of every task scheduled for the Home day (see `isInHomeDay`), plus
  * the task with the running Pomodoro even when it belongs to another day.
  */
-export function homeTodayTasks({ allTasks, todayTasks, homeDayKey, activeTaskId, resolvedActiveTask }: HomeTodayInput): Task[] {
+export function homeTodayTasks({
+    allTasks, todayTasks, homeDayKey, dayEndHour, activeTaskId, resolvedActiveTask,
+}: HomeTodayInput): Task[] {
+    const inHomeDay = (task: Task) => isScheduledForHomeDay(task, homeDayKey, dayEndHour);
     const seenTaskIds = new Set<string>();
     const mergedTasks: Task[] = [];
     const taskById = new Map(allTasks.map(task => [task.taskId, task] as const));
@@ -23,15 +27,15 @@ export function homeTodayTasks({ allTasks, todayTasks, homeDayKey, activeTaskId,
         const latestTask = taskById.get(task.taskId);
         const taskToAdd = latestTask ?? task;
         if (taskToAdd.parentId || seenTaskIds.has(taskToAdd.taskId)) return;
-        if (latestTask && !isScheduledForHomeDay(latestTask, homeDayKey)
+        if (latestTask && !inHomeDay(latestTask)
             && latestTask.taskId !== activeTaskId) return;
         seenTaskIds.add(task.taskId);
         mergedTasks.push(taskToAdd);
     };
 
-    todayTasks.filter(task => isScheduledForHomeDay(task, homeDayKey)).forEach(addMainTask);
+    todayTasks.filter(inHomeDay).forEach(addMainTask);
     allTasks.forEach(task => {
-        if (isScheduledForHomeDay(task, homeDayKey) || task.taskId === activeTaskId) addMainTask(task);
+        if (inHomeDay(task) || task.taskId === activeTaskId) addMainTask(task);
     });
     if (resolvedActiveTask?.taskId === activeTaskId) addMainTask(resolvedActiveTask);
 
@@ -79,8 +83,13 @@ export function visibleHomeTasks({
 }
 
 /** Unfinished main tasks from before the Home day. */
-export function olderHomeTasks(pastTasks: Task[], homeDayKey: string, pendingDeletedTaskIds: ReadonlySet<string>): Task[] {
+export function olderHomeTasks(
+    pastTasks: Task[],
+    homeDayKey: string,
+    dayEndHour: number,
+    pendingDeletedTaskIds: ReadonlySet<string>,
+): Task[] {
     return pastTasks.filter(task => !pendingDeletedTaskIds.has(task.taskId)
         && !task.parentId && !task.completed
-        && !isScheduledForHomeDay(task, homeDayKey));
+        && !isScheduledForHomeDay(task, homeDayKey, dayEndHour));
 }
