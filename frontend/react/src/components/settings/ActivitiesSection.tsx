@@ -1,5 +1,16 @@
 import { useState } from 'react';
-import { Alert, Box, Button, IconButton, Menu, MenuItem, Stack, TextField, Tooltip, Typography } from '@mui/material';
+import {
+    Alert,
+    Box,
+    Button,
+    IconButton,
+    Menu,
+    MenuItem,
+    Stack,
+    TextField,
+    Tooltip,
+    Typography,
+} from '@mui/material';
 import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import { useActivities } from '../../hooks/useActivities';

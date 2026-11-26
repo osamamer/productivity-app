@@ -173,6 +173,8 @@ export function createFakeBackend({ today, tasks = [], groups = [], events = [] 
         http.get(`${API}/api/v1/events`, () => HttpResponse.json(events)),
         http.get(`${API}/api/v1/calendars`, () => HttpResponse.json([])),
         http.get(`${API}/api/v1/*`, () => HttpResponse.json([])),
+        // Writes the tests do not inspect succeed and echo what was sent.
+        http.all(`${API}/api/v1/*`, async ({ request }) => HttpResponse.json(await request.json().catch(() => ({})))),
     ];
     return backend;
 }

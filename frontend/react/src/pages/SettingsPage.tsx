@@ -1,11 +1,32 @@
 import { CompactPopover } from '../components/CompactPopover';
-import { ChangeEvent, FormEvent, SyntheticEvent, memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
-    Alert, Box, Button, CircularProgress,
-    DialogActions, DialogContent, DialogContentText, DialogTitle,
-    IconButton, LinearProgress, MenuItem, Snackbar,
-    Stack, Switch, Tab, Tabs,
-    TextField, Typography,
+    ChangeEvent,
+    FormEvent,
+    SyntheticEvent,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    useSyncExternalStore,
+} from 'react';
+import {
+    Alert,
+    Box,
+    Button,
+    CircularProgress,
+    DialogActions,
+    DialogContent,
+    DialogContentText,
+    DialogTitle,
+    IconButton,
+    LinearProgress,
+    MenuItem,
+    Stack,
+    Switch,
+    Tab,
+    Tabs,
+    TextField,
+    Typography,
 } from '@mui/material';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import NightlightIcon from '@mui/icons-material/Nightlight';
@@ -15,11 +36,9 @@ import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import SecurityOutlinedIcon from '@mui/icons-material/SecurityOutlined';
 import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
-import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
 import CheckIcon from '@mui/icons-material/Check';
 import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined';
 import VolumeUpOutlinedIcon from '@mui/icons-material/VolumeUpOutlined';
-import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined';
 import MusicNoteOutlinedIcon from '@mui/icons-material/MusicNoteOutlined';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -31,9 +50,6 @@ import { useSearchParams } from 'react-router-dom';
 import { userService } from '../services/api/userService.ts';
 import { getRuntimeUserPreference, updateRuntimeUserPreferences } from '../services/userPreferenceStore';
 import axios from 'axios';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import {
     getExcludeTodayCompletedHomeTasks,
     getShowCompletedHomeTasks,
@@ -51,7 +67,10 @@ import {
     setPomodoroSecondsModePreference,
     subscribeToPomodoroFormPreferences,
 } from '../services/api/pomodoroConfigService.ts';
-import { getShowClosedMentalThreads, setShowClosedMentalThreads } from '../services/utils/mentalThreadPreferences.ts';
+import {
+    getShowClosedMentalThreads,
+    setShowClosedMentalThreads,
+} from '../services/utils/mentalThreadPreferences.ts';
 import { isAudioFeedbackEnabled, setAudioFeedbackEnabled } from '../services/audioFeedback.ts';
 import {
     BUILT_IN_POMODORO_SOUND,
@@ -75,28 +94,15 @@ import {
     subscribeToPomodoroSoundUpload,
 } from '../services/pomodoroSoundUpload.ts';
 import { selectWhiteNoiseSound, setWhiteNoiseSource } from '../services/whiteNoise.ts';
-import { notificationService, type WebPushSubscriptionPayload } from '../services/api/notificationService';
 import { isDesktopApp, isLocalDesktopMode } from '../services/desktop';
 import LocalBackupSection from '../components/settings/LocalBackupSection';
 import AppVersionInfo from '../components/settings/AppVersionInfo';
 import DesktopStorageSection from '../components/settings/DesktopStorageSection';
 import ScreenTimeSection from '../components/settings/ScreenTimeSection';
 import { ActivitiesSection } from '../components/settings/ActivitiesSection';
-
-const sectionCardSx = {
-    backgroundColor: 'background.paper',
-    borderRadius: 3,
-    px: 2.5,
-    py: 2.25,
-    boxShadow: '0 2px 16px rgba(0,0,0,0.06)',
-};
-
-const sectionHeadingSx = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 1,
-    mb: 1.5,
-};
+import { sectionCardSx, sectionHeadingSx } from '../components/settings/settingsStyles';
+import { CheckupSettingsSection } from '../components/settings/CheckupSettingsSection';
+import { BrowserNotificationsSection } from '../components/settings/BrowserNotificationsSection';
 
 const hideCompletedTasksDescription = 'Hide completed tasks on the Tasks page. Calendar uses its own status filter.';
 const excludeTodayCompletedTasksDescription = 'Also hide completed tasks scheduled for today from the Home page.';
@@ -108,519 +114,6 @@ const pomodoroSoundDescription = 'Use brown noise or one of your uploaded MP3 fi
 const showClosedMentalThreadsDescription = 'Keep closed threads visible in the mental threads list.';
 const soundEffectsDescription = 'Play short musical cues when you complete, capture, schedule, or rate something.';
 const muteFocusNoiseDuringBreaksDescription = 'Mute focus noise when a running focus session pauses or ends.';
-const repeatCheckupNotificationsDescription = 'If you do not check in, remind you again every 30 minutes.';
-const DEFAULT_CHECKUP_INTERVAL_MINUTES = 180;
-const DEFAULT_CHECKUP_START_TIME = '09:00';
-
-const checkupIntervalOptions = [
-    { value: 60, label: '1 hour' },
-    { value: 120, label: '2 hours' },
-    { value: 180, label: '3 hours' },
-    { value: 240, label: '4 hours' },
-    { value: 360, label: '6 hours' },
-    { value: 480, label: '8 hours' },
-    { value: 720, label: '12 hours' },
-];
-
-function dateFromTime(value: string): Date {
-    const match = /^(\d{2}):(\d{2})/.exec(value);
-    const date = new Date();
-    date.setHours(match ? Number(match[1]) : 9, match ? Number(match[2]) : 0, 0, 0);
-    return date;
-}
-
-function timeFromDate(value: Date): string {
-    return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
-}
-
-const CheckupStartTimeField = memo(function CheckupStartTimeField({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (value: string) => void }) {
-    return (
-        <LocalizationProvider dateAdapter={AdapterDateFns}>
-            <TimePicker
-                label="Start at"
-                value={dateFromTime(value)}
-                onChange={nextValue => {
-                    if (nextValue) onChange(timeFromDate(nextValue));
-                }}
-                disabled={disabled}
-                ampm={false}
-                slotProps={{
-                    textField: {
-                        fullWidth: true,
-                        size: 'small',
-                    },
-                    actionBar: { actions: ['cancel', 'accept'] },
-                    desktopPaper: {
-                        sx: {
-                            borderRadius: 3,
-                            backgroundColor: 'background.paper',
-                            backgroundImage: 'none',
-                            border: theme => `1px solid ${theme.palette.divider}`,
-                        },
-                    },
-                    mobilePaper: {
-                        sx: {
-                            borderRadius: 3,
-                            backgroundColor: 'background.paper',
-                            backgroundImage: 'none',
-                            border: theme => `1px solid ${theme.palette.divider}`,
-                        },
-                    },
-                }}
-            />
-        </LocalizationProvider>
-    );
-});
-
-interface CheckupToggleRowProps {
-    label: string;
-    description: string;
-    checked: boolean;
-    disabled: boolean;
-    ariaLabel: string;
-    onChange: (event: ChangeEvent<HTMLInputElement>) => void;
-}
-
-const CheckupToggleRow = memo(function CheckupToggleRow({
-    label,
-    description,
-    checked,
-    disabled,
-    ariaLabel,
-    onChange,
-}: CheckupToggleRowProps) {
-    return (
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2 }}>
-            <Box sx={{ textAlign: 'left' }}>
-                <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                    {label}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                    {description}
-                </Typography>
-            </Box>
-            <Switch
-                checked={checked}
-                onChange={onChange}
-                disabled={disabled}
-                inputProps={{ 'aria-label': ariaLabel }}
-            />
-        </Box>
-    );
-});
-
-interface CheckupSelectFieldProps {
-    label: string;
-    value: number;
-    options: ReadonlyArray<{ value: number; label: string }>;
-    disabled: boolean;
-    onChange: (value: number) => void;
-}
-
-const CheckupSelectField = memo(function CheckupSelectField({
-    label,
-    value,
-    options,
-    disabled,
-    onChange,
-}: CheckupSelectFieldProps) {
-    return (
-        <TextField
-            select
-            fullWidth
-            size="small"
-            label={label}
-            value={value}
-            onChange={event => onChange(Number(event.target.value))}
-            disabled={disabled}
-        >
-            {options.map(option => (
-                <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-            ))}
-        </TextField>
-    );
-});
-
-function checkupTimesPerDay(intervalMinutes: number, startTime: string): number {
-    const start = dateFromTime(startTime);
-    const startMinute = start.getHours() * 60 + start.getMinutes();
-    return Math.min(24, Math.floor((24 * 60 - startMinute) / intervalMinutes) + 1);
-}
-
-interface CheckupScheduleProps {
-    intervalMinutes: number;
-    startTime: string;
-    disabled: boolean;
-    saving: boolean;
-    onIntervalChange: (value: number) => void;
-    onStartTimeChange: (value: string) => void;
-    onSave: () => void;
-}
-
-const CheckupSchedule = memo(function CheckupSchedule({
-    intervalMinutes,
-    startTime,
-    disabled,
-    saving,
-    onIntervalChange,
-    onStartTimeChange,
-    onSave,
-}: CheckupScheduleProps) {
-    return (
-        <>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <CheckupSelectField
-                    label="Repeat every"
-                    value={intervalMinutes}
-                    options={checkupIntervalOptions}
-                    onChange={onIntervalChange}
-                    disabled={disabled}
-                />
-                <CheckupStartTimeField
-                    value={startTime}
-                    onChange={onStartTimeChange}
-                    disabled={disabled}
-                />
-            </Stack>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25, textAlign: 'left' }}>
-                Notifications start at this time and repeat at this interval until the daily schedule ends.
-            </Typography>
-            <Button
-                variant="outlined"
-                onClick={onSave}
-                disabled={disabled}
-                startIcon={saving ? <CircularProgress size={16} color="inherit" /> : undefined}
-                sx={{ mt: 2, borderRadius: 2, textTransform: 'none' }}
-            >
-                {saving ? 'Saving...' : 'Save check-up schedule'}
-            </Button>
-        </>
-    );
-});
-
-const CheckupSettingsSection = memo(function CheckupSettingsSection() {
-    const [checkupNotificationsEnabled, setCheckupNotificationsEnabled] = useState(true);
-    const [repeatCheckupNotificationsEnabled, setRepeatCheckupNotificationsEnabled] = useState(true);
-    const [checkupIntervalMinutes, setCheckupIntervalMinutes] = useState(DEFAULT_CHECKUP_INTERVAL_MINUTES);
-    const [checkupStartTime, setCheckupStartTime] = useState(DEFAULT_CHECKUP_START_TIME);
-    const [checkupPreferencesLoading, setCheckupPreferencesLoading] = useState(true);
-    const [checkupEnabledSaving, setCheckupEnabledSaving] = useState(false);
-    const [repeatCheckupSaving, setRepeatCheckupSaving] = useState(false);
-    const [checkupScheduleSaving, setCheckupScheduleSaving] = useState(false);
-    const [checkupPreferenceError, setCheckupPreferenceError] = useState<string | null>(null);
-    const [checkupPreferenceSuccess, setCheckupPreferenceSuccess] = useState<string | null>(null);
-
-    useEffect(() => {
-        let cancelled = false;
-        userService.getPreferences()
-            .then(preferences => {
-                if (!cancelled) {
-                    setCheckupNotificationsEnabled(preferences.checkupNotificationsEnabled !== false);
-                    setRepeatCheckupNotificationsEnabled(preferences.repeatCheckupNotificationsEnabled !== false);
-                    setCheckupIntervalMinutes(preferences.checkupIntervalMinutes || DEFAULT_CHECKUP_INTERVAL_MINUTES);
-                    setCheckupStartTime(preferences.checkupStartTime?.slice(0, 5) || DEFAULT_CHECKUP_START_TIME);
-                    const checkupTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-                    if (preferences.checkupTimeZone !== checkupTimeZone) {
-                        void userService.updatePreferences({ checkupTimeZone }).catch(error => {
-                            console.error('Could not synchronize the check-up time zone:', error);
-                        });
-                    }
-                }
-            })
-            .catch(error => {
-                console.error('Failed to load check-up settings:', error);
-                if (!cancelled) setCheckupPreferenceError('Could not load check-up settings right now.');
-            })
-            .finally(() => {
-                if (!cancelled) setCheckupPreferencesLoading(false);
-            });
-        return () => { cancelled = true; };
-    }, []);
-
-    const handleCheckupEnabledChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
-        const nextValue = event.target.checked;
-        const previousValue = checkupNotificationsEnabled;
-        setCheckupNotificationsEnabled(nextValue);
-        setCheckupEnabledSaving(true);
-        setCheckupPreferenceError(null);
-        setCheckupPreferenceSuccess(null);
-
-        try {
-            const preferences = await userService.updatePreferences({ checkupNotificationsEnabled: nextValue });
-            setCheckupNotificationsEnabled(preferences.checkupNotificationsEnabled !== false);
-            setCheckupPreferenceSuccess('Check-up notifications saved.');
-        } catch (error) {
-            console.error('Failed to update check-up notification preference:', error);
-            setCheckupNotificationsEnabled(previousValue);
-            setCheckupPreferenceError('Could not save check-up settings right now.');
-        } finally {
-            setCheckupEnabledSaving(false);
-        }
-    }, [checkupNotificationsEnabled]);
-
-    const handleCheckupRepeatEnabledChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
-        const nextValue = event.target.checked;
-        const previousValue = repeatCheckupNotificationsEnabled;
-        setRepeatCheckupNotificationsEnabled(nextValue);
-        setRepeatCheckupSaving(true);
-        setCheckupPreferenceError(null);
-        setCheckupPreferenceSuccess(null);
-
-        try {
-            const preferences = await userService.updatePreferences({
-                repeatCheckupNotificationsEnabled: nextValue,
-            });
-            setRepeatCheckupNotificationsEnabled(preferences.repeatCheckupNotificationsEnabled !== false);
-            setCheckupPreferenceSuccess('Repeat reminder setting saved.');
-        } catch (error) {
-            console.error('Failed to update repeated check-up notification preference:', error);
-            setRepeatCheckupNotificationsEnabled(previousValue);
-            setCheckupPreferenceError('Could not save check-up settings right now.');
-        } finally {
-            setRepeatCheckupSaving(false);
-        }
-    }, [repeatCheckupNotificationsEnabled]);
-
-    const handleCheckupScheduleSave = useCallback(async () => {
-        const previous = { checkupIntervalMinutes, checkupStartTime };
-        setCheckupScheduleSaving(true);
-        setCheckupPreferenceError(null);
-        setCheckupPreferenceSuccess(null);
-
-        try {
-            const preferences = await userService.updatePreferences({
-                checkupIntervalMinutes,
-                checkupStartTime,
-                checkupTimesPerDay: checkupTimesPerDay(checkupIntervalMinutes, checkupStartTime),
-                checkupTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-            });
-            setCheckupIntervalMinutes(preferences.checkupIntervalMinutes);
-            setCheckupStartTime(preferences.checkupStartTime.slice(0, 5));
-            setCheckupPreferenceSuccess('Check-up schedule saved.');
-        } catch (error) {
-            console.error('Failed to update check-up notification schedule:', error);
-            setCheckupIntervalMinutes(previous.checkupIntervalMinutes);
-            setCheckupStartTime(previous.checkupStartTime);
-            setCheckupPreferenceError('Could not save this check-up schedule right now.');
-        } finally {
-            setCheckupScheduleSaving(false);
-        }
-    }, [checkupIntervalMinutes, checkupStartTime]);
-
-    const handleIntervalChange = useCallback((value: number) => setCheckupIntervalMinutes(value), []);
-    const handleStartTimeChange = useCallback((value: string) => setCheckupStartTime(value), []);
-    const handleScheduleSave = useCallback(() => {
-        void handleCheckupScheduleSave();
-    }, [handleCheckupScheduleSave]);
-
-    const closeCheckupPreferenceSuccess = useCallback(() => setCheckupPreferenceSuccess(null), []);
-
-    return (
-        <>
-            <Box sx={sectionCardSx}>
-                <Box sx={sectionHeadingSx}>
-                    <AccessTimeOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                        Mental state check-ups
-                    </Typography>
-                </Box>
-
-                {checkupPreferenceError && (
-                    <Alert severity="warning" sx={{ mb: 2 }}>
-                        {checkupPreferenceError}
-                    </Alert>
-                )}
-                <CheckupToggleRow
-                    label="Send check-up notifications"
-                    description="Get a reminder to pause and record how you are doing."
-                    checked={checkupNotificationsEnabled}
-                    onChange={handleCheckupEnabledChange}
-                    disabled={checkupPreferencesLoading || checkupEnabledSaving}
-                    ariaLabel="Enable mental state check-up notifications"
-                />
-
-                {!checkupPreferencesLoading && checkupNotificationsEnabled && (
-                    <>
-                        <CheckupToggleRow
-                            label="Keep reminding me until I check in"
-                            description={repeatCheckupNotificationsDescription}
-                            checked={repeatCheckupNotificationsEnabled}
-                            onChange={handleCheckupRepeatEnabledChange}
-                            disabled={repeatCheckupSaving}
-                            ariaLabel="Repeat mental state check-up notifications until checked in"
-                        />
-                        <CheckupSchedule
-                            intervalMinutes={checkupIntervalMinutes}
-                            startTime={checkupStartTime}
-                            onIntervalChange={handleIntervalChange}
-                            onStartTimeChange={handleStartTimeChange}
-                            onSave={handleScheduleSave}
-                            disabled={checkupScheduleSaving}
-                            saving={checkupScheduleSaving}
-                        />
-                    </>
-                )}
-            </Box>
-            <Snackbar
-                key={checkupPreferenceSuccess ?? undefined}
-                open={Boolean(checkupPreferenceSuccess)}
-                autoHideDuration={3500}
-                onClose={closeCheckupPreferenceSuccess}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-            >
-                <Alert severity="success" variant="filled" onClose={closeCheckupPreferenceSuccess}>
-                    {checkupPreferenceSuccess}
-                </Alert>
-            </Snackbar>
-        </>
-    );
-});
-
-function decodeApplicationServerKey(value: string): Uint8Array {
-    const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
-    const decoded = window.atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='));
-    return Uint8Array.from(decoded, character => character.charCodeAt(0));
-}
-
-function serializePushSubscription(subscription: PushSubscription): WebPushSubscriptionPayload {
-    const value = subscription.toJSON();
-    if (!value.endpoint || !value.keys?.p256dh || !value.keys.auth) {
-        throw new Error('The browser returned an incomplete push subscription');
-    }
-    return {
-        endpoint: value.endpoint,
-        keys: { p256dh: value.keys.p256dh, auth: value.keys.auth },
-    };
-}
-
-const BrowserNotificationsSection = memo(function BrowserNotificationsSection() {
-    const [publicKey, setPublicKey] = useState<string | null>(null);
-    const [enabled, setEnabled] = useState(false);
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [unavailable, setUnavailable] = useState(false);
-
-    useEffect(() => {
-        let cancelled = false;
-        if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
-            setUnavailable(true);
-            setLoading(false);
-            return;
-        }
-
-        void notificationService.getWebPushPublicKey()
-            .then(async key => {
-                const registration = await navigator.serviceWorker.ready;
-                const subscription = await registration.pushManager.getSubscription();
-                if (subscription) {
-                    if (Notification.permission === 'granted') {
-                        await notificationService.registerWebPushSubscription(serializePushSubscription(subscription));
-                    } else {
-                        await notificationService.removeWebPushSubscription(subscription.endpoint);
-                        await subscription.unsubscribe();
-                    }
-                }
-                if (!cancelled) {
-                    setPublicKey(key);
-                    setEnabled(Boolean(subscription && Notification.permission === 'granted'));
-                }
-            })
-            .catch(loadError => {
-                console.error('Could not load browser notification support:', loadError);
-                if (!cancelled) setUnavailable(true);
-            })
-            .finally(() => {
-                if (!cancelled) setLoading(false);
-            });
-        return () => { cancelled = true; };
-    }, []);
-
-    const handleChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
-        const shouldEnable = event.target.checked;
-        setSaving(true);
-        setError(null);
-        try {
-            if (shouldEnable) {
-                const permission = Notification.permission === 'granted'
-                    ? 'granted'
-                    : await Notification.requestPermission();
-                if (permission !== 'granted') {
-                    setError(permission === 'denied'
-                        ? 'Allow notifications for this site in your browser settings.'
-                        : 'Browser notification permission was not granted.');
-                    return;
-                }
-                if (!publicKey) {
-                    setError('Browser notifications are unavailable right now.');
-                    return;
-                }
-
-                const registration = await navigator.serviceWorker.ready;
-                const subscription = await registration.pushManager.getSubscription()
-                    || await registration.pushManager.subscribe({
-                        userVisibleOnly: true,
-                        applicationServerKey: decodeApplicationServerKey(publicKey),
-                    });
-                await notificationService.registerWebPushSubscription(serializePushSubscription(subscription));
-                setEnabled(true);
-            } else {
-                const registration = await navigator.serviceWorker.ready;
-                const subscription = await registration.pushManager.getSubscription();
-                if (subscription) {
-                    await notificationService.removeWebPushSubscription(subscription.endpoint);
-                    await subscription.unsubscribe();
-                }
-                setEnabled(false);
-            }
-        } catch (caughtError) {
-            console.error('Failed to update browser notifications:', caughtError);
-            setError('Could not update browser notifications right now. Try again.');
-        } finally {
-            setSaving(false);
-        }
-    }, [publicKey]);
-
-    return (
-        <Box sx={sectionCardSx}>
-            <Box sx={sectionHeadingSx}>
-                <NotificationsActiveOutlinedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                    Browser notifications
-                </Typography>
-            </Box>
-            {error && <Alert severity="warning" sx={{ mb: 2 }}>{error}</Alert>}
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
-                <Box sx={{ textAlign: 'left' }}>
-                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                        Notify me when the app is closed
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        Receive reminders on this browser when Claritard is closed. Pomodoro transition alerts play and appear locally while the app is open.
-                    </Typography>
-                </Box>
-                <Switch
-                    checked={enabled}
-                    onChange={handleChange}
-                    disabled={loading || saving || unavailable
-                        || (typeof Notification !== 'undefined' && Notification.permission === 'denied')}
-                    inputProps={{ 'aria-label': 'Enable browser notifications when Claritard is closed' }}
-                />
-            </Box>
-            {unavailable && (
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-                    Background notifications are unavailable in this browser or app configuration.
-                </Typography>
-            )}
-            {!unavailable && typeof Notification !== 'undefined' && Notification.permission === 'denied' && (
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-                    Notifications are blocked for this site. Change the permission in your browser settings to enable them.
-                </Typography>
-            )}
-        </Box>
-    );
-});
-
 export function SettingsPage() {
     const { user, logout } = useUser();
     const { accentColor, darkMode, setAccentColor, setTheme } = useAppTheme();
