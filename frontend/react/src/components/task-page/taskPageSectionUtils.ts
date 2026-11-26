@@ -5,8 +5,8 @@ export type TaskListItem =
     | { kind: 'group'; group: TaskGroup; tasks: Task[] };
 
 /**
- * Home shows a group with only one task left (one task in the list, or one not yet done) as plain
- * tasks; the Tasks page keeps the group. A group whose tasks are all done stays a group.
+ * Home shows a group with only one task left (one task in the list, or one not yet done) as that
+ * task alone, without its done tasks; the Tasks page keeps the group. A group whose tasks are all done stays a group.
  */
 export function shouldRenderTaskGroup(tasks: Task[]): boolean {
     return tasks.length > 1 && tasks.filter(task => !task.completed).length !== 1;

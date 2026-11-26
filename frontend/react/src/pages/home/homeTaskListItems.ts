@@ -33,9 +33,14 @@ export function buildTaskListItems(
         else tasksByGroupId.set(groupId, [task]);
     });
 
+    // A group with one task left shows just that task: its done tasks are hidden with the group.
+    const hiddenTaskIds = new Set<string>();
     tasksByGroupId.forEach((groupTasks, groupId) => {
         if (shouldRenderTaskGroup(groupTasks)) return;
-        groupTasks.forEach(task => groupByTaskId.delete(task.taskId));
+        groupTasks.forEach(task => {
+            groupByTaskId.delete(task.taskId);
+            if (task.completed) hiddenTaskIds.add(task.taskId);
+        });
         tasksByGroupId.delete(groupId);
     });
 
@@ -43,6 +48,7 @@ export function buildTaskListItems(
     const items: TaskListItem[] = [];
 
     tasks.forEach(task => {
+        if (hiddenTaskIds.has(task.taskId)) return;
         const group = groupByTaskId.get(task.taskId);
         if (!group) {
             items.push({

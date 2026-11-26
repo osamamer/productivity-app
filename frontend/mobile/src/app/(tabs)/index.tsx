@@ -220,21 +220,27 @@ function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] 
       if (visibleTaskIds.has(taskId) && !groupByTaskId.has(taskId)) groupByTaskId.set(taskId, group);
     }));
 
-  // Home shows a group with only one task left (one in the list, or one not yet done) as plain
-  // tasks, like the web; the Tasks tab keeps the group. A group whose tasks are all done stays one.
+  // Home shows a group with only one task left (one in the list, or one not yet done) as that
+  // task alone, like the web; the Tasks tab keeps the group. A group whose tasks are all done stays one.
   const tasksByGroupId = new Map<string, Task[]>();
   tasks.forEach(task => {
     const groupId = groupByTaskId.get(task.taskId)?.groupId;
     if (groupId) tasksByGroupId.set(groupId, [...(tasksByGroupId.get(groupId) ?? []), task]);
   });
+  const hiddenTaskIds = new Set<string>();
   tasksByGroupId.forEach(groupTasks => {
     const remaining = groupTasks.filter(task => !task.completed).length;
     if (groupTasks.length > 1 && remaining !== 1) return;
-    groupTasks.forEach(task => groupByTaskId.delete(task.taskId));
+    groupTasks.forEach(task => {
+      groupByTaskId.delete(task.taskId);
+      // Only the task left shows; the group's done tasks are hidden with it.
+      if (task.completed) hiddenTaskIds.add(task.taskId);
+    });
   });
 
   const emittedGroupIds = new Set<string>();
   return tasks.reduce<TaskListItem[]>((items, task) => {
+    if (hiddenTaskIds.has(task.taskId)) return items;
     const group = groupByTaskId.get(task.taskId);
     if (!group) {
       items.push({ kind: 'task', task });

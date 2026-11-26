@@ -28,11 +28,11 @@ describe('a group with only one of its tasks in the list', () => {
 describe('a group with only one task not yet done', () => {
     const done = { ...second, completed: true };
 
-    it('shows its tasks without the group on Home', () => {
-        const items = buildHomeTaskListItems([first, done], [group], id => id, 'today');
+    it('shows that task alone on Home, hiding the done ones', () => {
+        const items = buildHomeTaskListItems([first, done, loose], [group], id => id, 'today');
 
         expect(items.map(item => item.kind === 'group' ? `group:${item.group.name}` : item.task.name))
-            .toEqual(['First', 'Second']);
+            .toEqual(['First', 'Loose']);
     });
 
     it('stays a group on the Tasks page', () => {
