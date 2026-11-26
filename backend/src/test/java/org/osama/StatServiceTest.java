@@ -1169,19 +1169,24 @@ public class StatServiceTest {
     }
 
     @Test
-    void reschedulingLinkedSeriesRetiresOldOccurrencesAndSynchronizesNewOnes() {
+    void reschedulingLinkedSeriesRetiresIncompleteOccurrencesAndPreservesCompletedOnes() {
         StatDefinition definition = createNamedStatDefinition("Rescheduled habit", StatType.BOOLEAN);
         StatDefinition linkedDefinition = statService.createRecurringTask(definition.getId(), TEST_USER_ID);
         String seriesId = linkedDefinition.getRecurringTaskSeriesId();
         TaskSeries series = taskSeriesRepository.findById(seriesId).orElseThrow();
         LocalDate startDate = series.getStartDateTime().toLocalDate();
         LocalDate retiredDate = startDate.plusDays(1);
-        LocalDate newOccurrenceDate = startDate.plusWeeks(1);
+        LocalDate completedDate = startDate.plusWeeks(1);
+        LocalDate newOccurrenceDate = startDate.plusWeeks(2);
         LocalTime oldTime = series.getStartDateTime().toLocalTime();
         LocalTime newTime = oldTime.plusHours(1);
 
         statService.recordEntry(definition.getId(), retiredDate, 0.0, TEST_USER_ID);
-        statService.recordEntry(definition.getId(), newOccurrenceDate, 1.0, TEST_USER_ID);
+        statService.recordEntry(definition.getId(), completedDate, 1.0, TEST_USER_ID);
+        Task completedOccurrence = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId).stream()
+                .filter(task -> completedDate.equals(task.getSeriesOccurrenceAt().toLocalDate()))
+                .findFirst()
+                .orElseThrow();
 
         TaskSeriesUpdateRequest update = new TaskSeriesUpdateRequest();
         update.setRecurrenceFrequency(TaskRecurrenceFrequency.WEEKLY);
@@ -1194,14 +1199,30 @@ public class StatServiceTest {
                 .noneMatch(task -> retiredDate.equals(task.getSeriesOccurrenceAt().toLocalDate())
                         && oldTime.equals(task.getSeriesOccurrenceAt().toLocalTime())));
 
+        List<Task> completedDateOccurrences = taskRepository
+                .findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId).stream()
+                .filter(task -> completedDate.equals(task.getSeriesOccurrenceAt().toLocalDate()))
+                .toList();
+        assertEquals(1, completedDateOccurrences.size());
+        Task preservedOccurrence = completedDateOccurrences.get(0);
+        assertEquals(completedOccurrence.getTaskId(), preservedOccurrence.getTaskId());
+        assertEquals(completedDate.atTime(oldTime), preservedOccurrence.getSeriesOccurrenceAt());
+        assertEquals(completedDate.atTime(oldTime), preservedOccurrence.getScheduledPerformDateTime());
+        assertTrue(preservedOccurrence.isCompleted());
+        assertFalse(preservedOccurrence.isSkipped());
+
         Task newOccurrence = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(seriesId).stream()
                 .filter(task -> newOccurrenceDate.equals(task.getSeriesOccurrenceAt().toLocalDate())
                         && newTime.equals(task.getSeriesOccurrenceAt().toLocalTime()))
                 .findFirst()
                 .orElseThrow();
-        assertTrue(newOccurrence.isCompleted());
+        assertFalse(newOccurrence.isCompleted());
+        statService.recordEntry(definition.getId(), newOccurrenceDate, 1.0, TEST_USER_ID);
+        assertTrue(taskRepository.findTaskByTaskId(newOccurrence.getTaskId()).orElseThrow().isCompleted());
         assertEquals(0.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
                 definition.getId(), TEST_USER_ID, retiredDate).orElseThrow().getValue());
+        assertEquals(1.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
+                definition.getId(), TEST_USER_ID, completedDate).orElseThrow().getValue());
         assertEquals(1.0, entryRepository.findByStatDefinitionIdAndUserIdAndDate(
                 definition.getId(), TEST_USER_ID, newOccurrenceDate).orElseThrow().getValue());
     }
