@@ -33,6 +33,12 @@ export function buildTaskListItems(
         else tasksByGroupId.set(groupId, [task]);
     });
 
+    tasksByGroupId.forEach((groupTasks, groupId) => {
+        if (shouldRenderTaskGroup(groupTasks)) return;
+        groupTasks.forEach(task => groupByTaskId.delete(task.taskId));
+        tasksByGroupId.delete(groupId);
+    });
+
     const emittedGroupIds = new Set<string>();
     const items: TaskListItem[] = [];
 
@@ -50,15 +56,6 @@ export function buildTaskListItems(
 
         emittedGroupIds.add(group.groupId);
         const groupTasks = tasksByGroupId.get(group.groupId) ?? [];
-        if (groupTasks.length > 0 && !shouldRenderTaskGroup(groupTasks)) {
-            const singletonTask = groupTasks[0];
-            items.push({
-                kind: 'task',
-                task: singletonTask,
-                renderKey: getTaskRenderKey(singletonTask.taskId),
-            });
-            return;
-        }
 
         items.push({
             kind: 'group',

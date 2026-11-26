@@ -25,6 +25,26 @@ describe('a group with only one of its tasks in the list', () => {
     });
 });
 
+describe('a group with only one task not yet done', () => {
+    const done = { ...second, completed: true };
+
+    it('shows its tasks without the group on Home', () => {
+        const items = buildHomeTaskListItems([first, done], [group], id => id, 'today');
+
+        expect(items.map(item => item.kind === 'group' ? `group:${item.group.name}` : item.task.name))
+            .toEqual(['First', 'Second']);
+    });
+
+    it('stays a group on the Tasks page', () => {
+        expect(buildTaskListItems([first, done], [group])[0].kind).toBe('group');
+    });
+
+    it('stays a group on Home once every task is done', () => {
+        const items = buildHomeTaskListItems([{ ...first, completed: true }, done], [group], id => id, 'today');
+        expect(items[0].kind).toBe('group');
+    });
+});
+
 describe('a group with several tasks in the list', () => {
     it('is a group on both pages', () => {
         expect(buildTaskListItems([first, second], [group])[0].kind).toBe('group');
