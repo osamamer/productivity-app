@@ -153,9 +153,8 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
         <NativeAnimated.View style={{ transform: [{ translateY: animatedPreviewOffset }] }}>
           <Reanimated.View
             style={[styles.container, inGroup && styles.groupedContainer, groupLast && styles.groupedLast, {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderBottomColor: inGroup ? colors.border : undefined,
+              backgroundColor: showDrag ? colors.surface : 'transparent',
+              borderColor: showDrag ? colors.accent : 'transparent',
             }, selected && showSelectionBorder && (inGroup ? { borderLeftWidth: 3, borderLeftColor: colors.accent } : { borderColor: colors.accent, borderWidth: 2 }),
             drag.animatedStyle,
             showDrag && styles.dragging,
@@ -164,7 +163,7 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
             task={task}
             onToggle={onToggle}
             onPress={onPress}
-            onLongPress={() => undefined}
+            onLongPress={dragEnabled ? undefined : onLongPress}
             onSelectionToggle={onSelectionToggle}
             selected={selected}
             onDelete={onDelete}
@@ -190,9 +189,9 @@ export function TaskRow({ task, onToggle, onPress, onLongPress, onSelectionToggl
 }
 
 const styles = StyleSheet.create({
-  container: { borderRadius: 18, borderWidth: 1, overflow: 'visible', position: 'relative' },
-  groupedContainer: { borderRadius: 0, borderWidth: 0, borderBottomWidth: StyleSheet.hairlineWidth },
-  groupedLast: { borderBottomLeftRadius: 18, borderBottomRightRadius: 18, borderBottomWidth: 0 },
+  container: { borderRadius: 12, borderWidth: 0, overflow: 'visible', position: 'relative' },
+  groupedContainer: { borderRadius: 0, borderWidth: 0 },
+  groupedLast: { borderBottomWidth: 0 },
   dragHost: { zIndex: 20 },
   dragging: { zIndex: 20, borderRadius: 18, borderWidth: 1, shadowColor: '#11111A', shadowOffset: { width: 0, height: 7 }, shadowRadius: 12, shadowOpacity: 0.24 },
   dropIndicator: { position: 'absolute', left: 12, right: 12, height: 3, borderRadius: 2, zIndex: 22, elevation: 4, shadowOpacity: 0.5, shadowRadius: 4 },

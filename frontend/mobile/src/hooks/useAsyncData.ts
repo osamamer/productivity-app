@@ -33,13 +33,13 @@ export function useAsyncData<T>(loader: () => Promise<T>, cacheKey?: string) {
     updateData(value);
   }, [cacheKey]);
 
-  const load = useCallback(async (refresh = false) => {
+  const load = useCallback(async (refresh = false, force = refresh) => {
     const version = ++requestVersion.current;
     if (refresh) setRefreshing(true);
     setError(null);
     try {
       const result = cacheKey
-        ? await loadPage(cacheKey, () => loaderRef.current(), refresh)
+        ? await loadPage(cacheKey, () => loaderRef.current(), force)
         : await loaderRef.current();
       if (mounted.current && version === requestVersion.current) {
         const value = keepUnchanged(dataRef.current, result);
@@ -86,5 +86,6 @@ export function useAsyncData<T>(loader: () => Promise<T>, cacheKey?: string) {
     refreshing,
     error,
     reload: useCallback(() => load(true), [load]),
+    revalidate: useCallback(() => load(false, true), [load]),
   };
 }

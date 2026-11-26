@@ -1,22 +1,22 @@
-import { PropsWithChildren, useEffect, useRef, useState } from 'react';
+import { PropsWithChildren, useEffect, useState } from 'react';
 import { ActivityIndicator, AppState, PermissionsAndroid, Platform, View } from 'react-native';
 
+import { boundariesUnlockRemaining, unlockBoundaries } from '@/lib/boundariesSession';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { Boundaries } from '@/services/boundaries';
 import { BoundariesLock } from './BoundariesLock';
 import { BoundariesSetup } from './BoundariesSetup';
 
-// A real trip away (Home, app switch, screen off) takes at least this long. Shorter non-active
-// blips happen when a native Modal opens, and must not re-lock mid-dialog.
-const SPURIOUS_BACKGROUND_MS = 1000;
-
 type GateState = 'loading' | 'setup' | 'locked' | 'open';
 
-/** Shows setup on first use, then the lock screen on every entry and every return from the background. */
+/** Password authorization lasts ten minutes, including navigation and time in the background. */
 export function BoundariesGate({ children }: PropsWithChildren) {
   const { colors } = useAppTheme();
   const [state, setState] = useState<GateState>('loading');
-  const backgroundedAt = useRef<number | null>(null);
+  const open = () => {
+    unlockBoundaries();
+    setState('open');
+  };
 
   useEffect(() => {
     void (async () => {
@@ -28,23 +28,21 @@ export function BoundariesGate({ children }: PropsWithChildren) {
           console.warn('Notification permission request failed:', cause);
         }
       }
-      setState((await Boundaries?.hasPasswordsSet()) ? 'locked' : 'setup');
+      setState((await Boundaries?.hasPasswordsSet()) ? boundariesUnlockRemaining() > 0 ? 'open' : 'locked' : 'setup');
     })();
   }, []);
 
   useEffect(() => {
+    if (state !== 'open') return;
+    const lockIfExpired = () => {
+      if (boundariesUnlockRemaining() === 0) setState('locked');
+    };
+    const timer = setTimeout(lockIfExpired, boundariesUnlockRemaining());
     const subscription = AppState.addEventListener('change', next => {
-      if (next !== 'active') {
-        backgroundedAt.current ??= Date.now();
-        return;
-      }
-      const leftAt = backgroundedAt.current;
-      backgroundedAt.current = null;
-      if (leftAt === null || Date.now() - leftAt < SPURIOUS_BACKGROUND_MS) return;
-      setState(current => (current === 'open' ? 'locked' : current));
+      if (next === 'active') lockIfExpired();
     });
-    return () => subscription.remove();
-  }, []);
+    return () => { clearTimeout(timer); subscription.remove(); };
+  }, [state]);
 
   if (state === 'loading') {
     return (
@@ -53,7 +51,7 @@ export function BoundariesGate({ children }: PropsWithChildren) {
       </View>
     );
   }
-  if (state === 'setup') return <BoundariesSetup onDone={() => setState('open')} />;
-  if (state === 'locked') return <BoundariesLock onUnlocked={() => setState('open')} />;
+  if (state === 'setup') return <BoundariesSetup onDone={open} />;
+  if (state === 'locked') return <BoundariesLock onUnlocked={open} />;
   return children;
 }

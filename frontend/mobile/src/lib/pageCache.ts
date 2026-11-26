@@ -36,7 +36,7 @@ export async function loadPage<T>(key: string, loader: () => Promise<T>, force =
   const cached = !force && readPage<T>(key);
   if (cached) return cached.value;
   const existing = pending.get(key);
-  if (existing) return existing as Promise<T>;
+  if (existing && !force) return existing as Promise<T>;
   const request = loader().then(value => {
     if (pending.get(key) === request) writePage(key, value);
     return value;

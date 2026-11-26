@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { TaskRow } from '@/components/tasks/TaskRow';
 import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
+import { threadStateColors } from '@/lib/mentalThreadPresentation';
 import { reportError } from '@/lib/errors';
 import { playAudioFeedback } from '@/lib/audioFeedback';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
@@ -38,19 +39,13 @@ export function ThreadDetailSheet({ thread, onClose, onUpdated }: {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const { colors } = useAppTheme();
   const editable = thread?.status === 'OPEN';
-  const stateColor = attention === 'ACTING'
-    ? colors.accent
-    : attention === 'RUMINATING'
-      ? colors.danger
-      : attention === 'PLANNED'
-        ? colors.success
-        : colors.warning;
+  const stateColor = threadStateColors[attention];
   const stateLabel = attention[0] + attention.slice(1).toLowerCase();
   const stateOptions = [
-    { value: 'ACTING' as const, label: 'Acting', color: colors.accent },
-    { value: 'RUMINATING' as const, label: 'Ruminating', color: colors.danger },
-    { value: 'PLANNED' as const, label: 'Planned', color: colors.success },
-    { value: 'PENDING' as const, label: 'Pending', color: colors.warning },
+    { value: 'ACTING' as const, label: 'Acting', color: threadStateColors.ACTING },
+    { value: 'RUMINATING' as const, label: 'Ruminating', color: threadStateColors.RUMINATING },
+    { value: 'PLANNED' as const, label: 'Planned', color: threadStateColors.PLANNED },
+    { value: 'PENDING' as const, label: 'Pending', color: threadStateColors.PENDING },
   ];
   const threadTasks = useMemo(
     () => thread ? allTasks.filter(task => task.mentalThreadId === thread.id && !task.parentId) : [],

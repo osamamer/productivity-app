@@ -14,6 +14,7 @@ import {
 } from 'react';
 
 import { appConfig, keycloakIssuer } from '@/lib/config';
+import { clearBoundariesSession } from '@/lib/boundariesSession';
 import { clearPageCache } from '@/lib/pageCache';
 import { clearTaskDetailsCache } from '@/lib/taskDetailsCache';
 import {
@@ -116,6 +117,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setUser(null);
     clearTaskDetailsCache();
     clearPageCache();
+    clearBoundariesSession();
     const results = await Promise.allSettled([
       SecureStore.deleteItemAsync(STORAGE_KEY),
       SecureStore.deleteItemAsync(USER_STORAGE_KEY),

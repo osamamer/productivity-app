@@ -11,11 +11,6 @@ import { Boundaries } from '@/services/boundaries';
 import { PasswordField } from './PasswordField';
 import { usePasswordWait } from './usePasswordWait';
 
-/**
- * Asks for the unlock password, then a ten second wait, every time Boundaries is opened or
- * brought back to the foreground. Enforcement keeps running in the background whether or not
- * this is showing.
- */
 export function BoundariesLock({ onUnlocked }: { onUnlocked: () => void }) {
   const { colors } = useAppTheme();
   const [password, setPassword] = useState('');
@@ -46,7 +41,7 @@ export function BoundariesLock({ onUnlocked }: { onUnlocked: () => void }) {
         <Ionicons name="lock-closed-outline" size={30} color={colors.accent} />
       </View>
       <AppText variant="display" style={styles.center}>Boundaries are locked</AppText>
-      <AppText color="muted" style={styles.center}>Enter your unlock password, then wait ten seconds, to view or change them.</AppText>
+      <AppText color="muted" style={styles.center}>Enter your unlock password, then wait ten seconds, to view or change them for ten minutes.</AppText>
       <Card style={{ gap: 12 }}>
         <PasswordField
           value={password}

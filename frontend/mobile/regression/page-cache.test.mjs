@@ -75,3 +75,15 @@ test('an optimistic page update wins over an older delayed request', async () =>
   await read;
   assert.deepEqual(readPage('notes').value, ['edited']);
 });
+
+
+test('pull-to-refresh starts a fresh read even while an older background read is pending', async () => {
+  clearPageCache();
+  let finishOld;
+  const background = loadPage('events', () => new Promise(resolve => { finishOld = resolve; }));
+  const fresh = await loadPage('events', async () => ['new meeting'], true);
+  assert.deepEqual(fresh, ['new meeting']);
+  finishOld(['old meeting']);
+  await background;
+  assert.deepEqual(readPage('events').value, ['new meeting']);
+});

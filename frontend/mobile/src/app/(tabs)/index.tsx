@@ -316,11 +316,8 @@ export default function TodayScreen() {
   const eventsResource = useAsyncData<CalendarEvent[]>(() => api.events.all(), 'events');
   const calendarsResource = useAsyncData<Calendar[]>(() => api.calendars.all(), 'calendars');
   const snapshotResource = useAsyncData<TodaySnapshot>(loadTodaySnapshot);
-  const { reload: reloadEvents } = eventsResource;
-  const { reload: reloadCalendars } = calendarsResource;
-  const { reload: reloadSnapshot } = snapshotResource;
-  const eventFocusLoadedRef = useRef(false);
-  const snapshotLoadedRef = useRef(false);
+  const { reload: reloadSnapshot, revalidate: revalidateSnapshot } = snapshotResource;
+  const [pullRefreshing, setPullRefreshing] = useState(false);
   const {
     allTasks,
     displayDayKey,
@@ -332,7 +329,6 @@ export default function TodayScreen() {
     addTask,
     updateTask: updateTaskInWorkspace,
     removeTask: removeTaskFromWorkspace,
-    loading: tasksLoading,
     refresh: refreshTasks,
     moveTasksToDate,
     reorderTasks,
@@ -370,20 +366,9 @@ export default function TodayScreen() {
   const dragTargetRef = useRef<DragTarget>({ itemKey: null, edge: null, groupId: null });
 
   useFocusEffect(useCallback(() => {
-    if (eventFocusLoadedRef.current) {
-      void reloadEvents();
-      void reloadCalendars();
-    }
-    else eventFocusLoadedRef.current = true;
-  }, [reloadCalendars, reloadEvents]));
-
-  useFocusEffect(useCallback(() => {
-    if (snapshotLoadedRef.current) void reloadSnapshot();
-    else snapshotLoadedRef.current = true;
-
-    const refreshInterval = setInterval(() => void reloadSnapshot(), 30_000);
+    const refreshInterval = setInterval(() => void revalidateSnapshot(), 30_000);
     return () => clearInterval(refreshInterval);
-  }, [reloadSnapshot]));
+  }, [revalidateSnapshot]));
 
   function updateTask(updated: Task) {
     updateTaskInWorkspace(updated);
@@ -833,13 +818,18 @@ export default function TodayScreen() {
   );
 
   async function refreshToday() {
-    await Promise.all([resource.reload(), eventsResource.reload(), calendarsResource.reload(), reloadSnapshot(), refreshTasks()]);
+    setPullRefreshing(true);
+    try {
+      await Promise.all([resource.reload(), eventsResource.reload(), calendarsResource.reload(), reloadSnapshot(), refreshTasks()]);
+    } finally {
+      setPullRefreshing(false);
+    }
   }
 
   return (
     <Screen
       contentStyle={{ paddingTop: 12 }}
-      refreshing={resource.refreshing || eventsResource.refreshing || calendarsResource.refreshing || snapshotResource.refreshing || tasksLoading}
+      refreshing={pullRefreshing}
       refreshEnabled={dragSource === null}
       onRefresh={() => void refreshToday()}
       overlay={(
@@ -862,43 +852,6 @@ export default function TodayScreen() {
       {homeDisplayPreferencesReady && resource.data && (
         <>
           {showTodaySnapshot && <TodaySnapshotCard snapshot={snapshotResource.data} />}
-
-          {showTodayEvents && (
-            <Card style={styles.eventsCard}>
-              <View style={styles.spaceBetween}>
-                <AppText variant="heading">Today’s events</AppText>
-                <AppButton compact variant="ghost" label="Calendar" icon="calendar-outline" onPress={() => router.push('/calendar')} />
-              </View>
-              {eventsResource.loading && !eventsResource.data ? (
-                <AppText color="muted">Loading events…</AppText>
-              ) : eventsResource.error && !eventsResource.data ? (
-                <AppText color="danger">Events are unavailable right now.</AppText>
-              ) : todayEvents.length === 0 ? (
-                <AppText color="muted">No events scheduled for today.</AppText>
-              ) : (
-                <View style={styles.eventsList}>
-                  {todayEvents.map(({ event, occurrence }) => (
-                    <SilentPressable
-                      key={`${event.id}-${occurrence.occurrenceKey}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${event.title}, ${occurrence.allDay ? 'all day' : formatCalendarTime(occurrence.start, event.timeZone)}`}
-                      onPress={() => router.push('/calendar')}
-                      style={({ pressed }) => [styles.eventRow, pressed && styles.pressed]}>
-                      <View style={[styles.eventDot, { backgroundColor: calendarColorHex(calendarsById.get(event.calendarId)?.color, colors.accent) }]} />
-                      <View style={styles.eventCopy}>
-                        <AppText variant="label" numberOfLines={2} style={occurrence.status === 'CANCELLED' && styles.cancelled}>{event.title}</AppText>
-                        <AppText variant="caption" color="muted">
-                          {occurrence.allDay ? 'All day' : formatCalendarTime(occurrence.start, event.timeZone)}
-                          {occurrence.status === 'CANCELLED' ? ' · Cancelled' : ''}
-                        </AppText>
-                      </View>
-                      <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
-                    </SilentPressable>
-                  ))}
-                </View>
-              )}
-            </Card>
-          )}
 
           <View style={styles.spaceBetween}>
             <AppText variant="heading">Today’s tasks</AppText>
@@ -961,9 +914,10 @@ export default function TodayScreen() {
                 style={[
                   styles.group,
                   {
-                    borderWidth: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? 2 : 1,
-                    borderColor: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? colors.accent : colors.border,
-                    backgroundColor: colors.surface,
+                    borderWidth: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId || draggedGroupId === item.group.groupId ? 2 : 0,
+                    borderLeftWidth: 2,
+                    borderColor: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId || draggedGroupId === item.group.groupId ? colors.accent : colors.border,
+                    backgroundColor: draggedGroupId === item.group.groupId ? colors.surface : 'transparent',
                     overflow: dragSource ? 'visible' : 'hidden',
                   },
                 ]}
@@ -976,7 +930,7 @@ export default function TodayScreen() {
                     style={({ pressed }) => [
                       styles.groupHeader,
                       collapsedGroupIds.has(item.group.groupId) ? styles.groupHeaderCollapsed : styles.groupHeaderExpanded,
-                      { backgroundColor: colors.surface, borderBottomColor: colors.border },
+                      { backgroundColor: 'transparent' },
                       pressed && styles.pressed,
                     ]}
                   >
@@ -1028,7 +982,7 @@ export default function TodayScreen() {
                   <View
                     style={[
                       styles.groupTasks,
-                      { backgroundColor: colors.surface },
+                      { backgroundColor: 'transparent' },
                     ]}>
                     {item.tasks.map(task => (
                         <TaskRow
@@ -1108,6 +1062,43 @@ export default function TodayScreen() {
               </View>
             </TaskSection>
           )}
+          {showTodayEvents && (
+            <Card style={styles.eventsCard}>
+              <View style={styles.spaceBetween}>
+                <AppText variant="heading">Today’s events</AppText>
+                <AppButton compact variant="ghost" label="Calendar" icon="calendar-outline" onPress={() => router.push('/calendar')} />
+              </View>
+              {eventsResource.loading && !eventsResource.data ? (
+                <AppText color="muted">Loading events…</AppText>
+              ) : eventsResource.error && !eventsResource.data ? (
+                <AppText color="danger">Events are unavailable right now.</AppText>
+              ) : todayEvents.length === 0 ? (
+                <AppText color="muted">No events scheduled for today.</AppText>
+              ) : (
+                <View style={styles.eventsList}>
+                  {todayEvents.map(({ event, occurrence }) => (
+                    <SilentPressable
+                      key={`${event.id}-${occurrence.occurrenceKey}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${event.title}, ${occurrence.allDay ? 'all day' : formatCalendarTime(occurrence.start, event.timeZone)}`}
+                      onPress={() => router.push('/calendar')}
+                      style={({ pressed }) => [styles.eventRow, pressed && styles.pressed]}>
+                      <View style={[styles.eventDot, { backgroundColor: calendarColorHex(calendarsById.get(event.calendarId)?.color, colors.accent) }]} />
+                      <View style={styles.eventCopy}>
+                        <AppText variant="label" numberOfLines={2} style={occurrence.status === 'CANCELLED' && styles.cancelled}>{event.title}</AppText>
+                        <AppText variant="caption" color="muted">
+                          {occurrence.allDay ? 'All day' : formatCalendarTime(occurrence.start, event.timeZone)}
+                          {occurrence.status === 'CANCELLED' ? ' · Cancelled' : ''}
+                        </AppText>
+                      </View>
+                      <Ionicons name="chevron-forward" size={17} color={colors.textMuted} />
+                    </SilentPressable>
+                  ))}
+                </View>
+              )}
+            </Card>
+          )}
+
         </>
       )}
       <TaskComposerSheet
@@ -1176,14 +1167,14 @@ const styles = StyleSheet.create({
   spaceBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14 },
   taskActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   list: { gap: TASK_LIST_GAP },
-  group: { borderWidth: 1, borderRadius: 20, overflow: 'hidden' },
+  group: { borderWidth: 0, borderLeftWidth: 2, borderRadius: 0, overflow: 'visible' },
   groupHeader: { minHeight: 64, borderTopLeftRadius: 19, borderTopRightRadius: 19, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
   groupHeaderCollapsed: { borderBottomLeftRadius: 19, borderBottomRightRadius: 19 },
-  groupHeaderExpanded: { borderBottomWidth: StyleSheet.hairlineWidth },
+  groupHeaderExpanded: { borderBottomWidth: 0 },
   groupSelection: { flex: 1, minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 8 },
   groupTitle: { flex: 1 },
   groupSelect: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-  groupTasks: { paddingVertical: 0 },
+  groupTasks: { paddingVertical: 0, paddingLeft: 16 },
   groupDropIndicator: { position: 'absolute', left: 12, right: 12, height: 3, borderRadius: 2, zIndex: 22, elevation: 4, shadowOpacity: 0.5, shadowRadius: 4 },
   groupDropIndicatorBefore: { top: -6.5 },
   groupDropIndicatorAfter: { bottom: -6.5 },

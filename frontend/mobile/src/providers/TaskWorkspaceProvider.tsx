@@ -227,6 +227,12 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
     void load(true, origin !== 'stat');
   }), [load, refreshGroups]);
 
+  const refresh = useCallback(async () => {
+    // Finish older reads first so a manual refresh cannot reuse data from before a mutation.
+    if (requestRef.current) await requestRef.current;
+    await load(true);
+  }, [load]);
+
   const loadMore = useCallback(async (period: 'PAST' | 'FUTURE') => {
     const requestReference = period === 'FUTURE' ? futureRequestRef : pastRequestRef;
     const inFlight = requestReference.current;
@@ -462,7 +468,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       loading,
       ready,
       error,
-      refresh: () => load(true),
+      refresh,
       hasMoreFutureTasks,
       hasMorePastTasks,
       loadMoreFutureTasks,
@@ -479,7 +485,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       replaceGroupTasks,
       deleteGroup,
     };
-  }, [addTask, allTasks, createGroup, deleteGroup, displayDayKey, error, groups, hasMoreFutureTasks, hasMorePastTasks, load, loadMoreFutureTasks, loadMorePastTasks, loading, moveTask, moveTasksToDate, moveTasksToToday, ready, removeTask, renameGroup, reorderTasks, replaceGroupTasks, updateTask]);
+  }, [addTask, allTasks, createGroup, deleteGroup, displayDayKey, error, groups, hasMoreFutureTasks, hasMorePastTasks, loadMoreFutureTasks, loadMorePastTasks, loading, moveTask, moveTasksToDate, moveTasksToToday, ready, refresh, removeTask, renameGroup, reorderTasks, replaceGroupTasks, updateTask]);
 
   return <TaskWorkspaceContext.Provider value={value}>{children}</TaskWorkspaceContext.Provider>;
 }

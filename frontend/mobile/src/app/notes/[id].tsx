@@ -120,8 +120,8 @@ export default function NoteEditorScreen() {
   const categoriesResource = useAsyncData<NoteCategory[]>(() => api.notes.categories(), 'note-categories');
   const { setData } = resource;
   const categories = categoriesResource.data ?? [];
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
+  const [title, setTitle] = useState(() => resource.data?.title ?? '');
+  const [content, setContent] = useState(() => resource.data ? plainText(resource.data.content) : '');
   const [deleting, setDeleting] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -325,7 +325,9 @@ export default function NoteEditorScreen() {
   }
 
   const categoryName = categories.find(category => category.id === resource.data?.categoryId)?.name ?? 'Uncategorized';
-  const editorDisabled = deleting || leaving || categoryUpdating;
+  const editorReady = resource.data?.id === noteId && hydratedNoteId === noteId;
+  const navigationBusy = deleting || leaving || categoryUpdating;
+  const editorDisabled = !editorReady || navigationBusy;
 
   return (
     <Screen
@@ -349,16 +351,16 @@ export default function NoteEditorScreen() {
         <SilentPressable
           accessibilityRole="button"
           accessibilityLabel="Go back"
-          disabled={editorDisabled}
+          disabled={navigationBusy}
           hitSlop={8}
           onPress={() => void leave()}
-          style={({ pressed }) => [styles.headerButton, pressed && styles.pressed, editorDisabled && styles.disabled]}>
+          style={({ pressed }) => [styles.headerButton, pressed && styles.pressed, navigationBusy && styles.disabled]}>
           <Ionicons name="arrow-back" size={23} color={colors.text} />
         </SilentPressable>
         <AppInput
-          value={title}
+          value={editorReady ? title : resource.data?.title ?? ''}
           onChangeText={changeTitle}
-          placeholder="Add a title…"
+          placeholder={editorReady ? "Add a title…" : ""}
           containerStyle={styles.titleContainer}
           style={[styles.titleInput, { color: colors.text }]}
           editable={!editorDisabled} />
@@ -375,7 +377,7 @@ export default function NoteEditorScreen() {
 
       {resource.loading && <LoadingView label="Loading note…" />}
       {resource.error && !resource.data && <ErrorView message={resource.error} retry={() => void resource.reload()} />}
-      {resource.data && (
+      {editorReady && (
         <View style={styles.workspace}>
           <AppInput
             multiline

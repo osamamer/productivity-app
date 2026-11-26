@@ -11,3 +11,5 @@ Use `src/providers/PopupProvider.tsx` and `src/components/ui/AppPopup.tsx` for c
 For mobile scheduling controls, use a `Custom` action that opens the themed date/time popup. Do not leave a `Someday` action that silently means “no date”; keep custom selection and cancellation behavior explicit.
 
 Run `npm run lint`, `npm run typecheck`, and `npm run export:android` before handing off mobile changes. OAuth must be tested in a native development build because Expo Go cannot register the `solife` callback scheme.
+
+Home reserves the pull-to-refresh indicator for explicit refresh gestures; background reconciliation stays silent. Task rows are transparent except during selection or drag, and task groups use a continuous left rail with indented children. Long-press selection must also work on rows where dragging is disabled (including leftovers and stat groups). Notes seed their editor snapshot before navigation and show editable fields only after the matching draft is hydrated. Boundaries password authorization lasts ten minutes in memory across navigation/backgrounding and is cleared on logout.

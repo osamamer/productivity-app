@@ -14,6 +14,7 @@ import { Screen } from '@/components/ui/Screen';
 import { SilentPressable } from '@/components/ui/SilentPressable';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
+import { writePage } from '@/lib/pageCache';
 import { reportError } from '@/lib/errors';
 import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
@@ -96,6 +97,7 @@ export default function NotesScreen() {
       toggleNoteSelection(note.id);
       return;
     }
+    writePage(`note:${note.id}`, note);
     router.push(`/notes/${note.id}`);
   }
 
@@ -188,6 +190,7 @@ export default function NotesScreen() {
       const categoryId = categories.some(category => category.id === activeFilter) ? activeFilter : null;
       const note = await api.notes.create(categoryId);
       resource.setData(current => current ? { ...current, notes: [note, ...current.notes] } : current);
+      writePage(`note:${note.id}`, note);
       router.push(`/notes/${note.id}?focus=body`);
     } catch (cause) { void showError('Could not create note', reportError('Could not create note', cause)); }
     finally { setCreating(false); }
@@ -233,7 +236,7 @@ export default function NotesScreen() {
                 accessibilityLabel={`Filter notes, currently ${activeFilterLabel}`}
                 accessibilityState={{ expanded: filterMenuOpen }}
                 onPress={() => setFilterMenuOpen(open => !open)}
-                style={({ pressed }) => [styles.floatingAction, styles.filterAction, { backgroundColor: colors.surface, borderColor: colors.accent, shadowColor: colors.text }, pressed && styles.pressed]}
+                style={({ pressed }) => [styles.floatingAction, styles.filterAction, { backgroundColor: colors.surface, borderColor: colors.accent }, pressed && styles.pressed]}
               >
                 <Ionicons name="folder-open-outline" size={18} color={colors.accent} />
                 <AppText variant="label" color="accent" numberOfLines={1} style={styles.filterActionLabel}>{activeFilter === 'all' ? 'All' : activeFilterLabel}</AppText>
@@ -244,7 +247,7 @@ export default function NotesScreen() {
                 accessibilityLabel="Create a new note"
                 disabled={creating}
                 onPress={() => void create()}
-                style={({ pressed }) => [styles.floatingAction, { backgroundColor: colors.surface, borderColor: colors.accent, shadowColor: colors.text }, creating && styles.disabled, pressed && styles.pressed]}
+                style={({ pressed }) => [styles.floatingAction, { backgroundColor: colors.surface, borderColor: colors.accent }, creating && styles.disabled, pressed && styles.pressed]}
               >
                 {creating ? <AppText variant="label" color="accent">Saving…</AppText> : <><Ionicons name="add" size={19} color={colors.accent} /><AppText variant="label" color="accent">New</AppText></>}
               </SilentPressable>
@@ -365,7 +368,7 @@ const styles = StyleSheet.create({
   selectionHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1 },
   bulkActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   floatingActions: { position: 'absolute', left: 18, right: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8 },
-  floatingAction: { minHeight: 48, borderRadius: 24, paddingHorizontal: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, shadowOffset: { width: 0, height: 5 }, shadowRadius: 12, shadowOpacity: 0.28, elevation: 6 },
+  floatingAction: { minHeight: 48, borderRadius: 24, paddingHorizontal: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   filterAction: { maxWidth: '60%', flexShrink: 1 },
   filterActionLabel: { flexShrink: 1 },
   filterMenuDismiss: { ...StyleSheet.absoluteFill },

@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { ThreadCard } from '@/components/mind/ThreadCard';
+import { threadStateColors } from '@/lib/mentalThreadPresentation';
 import { ThreadComposerSheet } from '@/components/mind/ThreadComposerSheet';
 import { ThreadDetailSheet } from '@/components/mind/ThreadDetailSheet';
 import { AppButton } from '@/components/ui/AppButton';
@@ -8,7 +10,6 @@ import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
 import { ChoiceChips } from '@/components/ui/ChoiceChips';
 import { Screen } from '@/components/ui/Screen';
-import { SilentPressable } from '@/components/ui/SilentPressable';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { loadMentalThreads } from '@/services/pageResources';
 import { useAsyncData } from '@/hooks/useAsyncData';
@@ -18,23 +19,6 @@ import type { AttentionState, MentalThread, MentalThreadSummary } from '@/types/
 
 interface ThreadData { threads: MentalThread[]; summary: MentalThreadSummary }
 type StateFilter = AttentionState | 'ALL';
-
-const closureLabels = {
-  RESOLVED: 'Resolved',
-  ACCEPTED: 'Accepted',
-  RELEASED: 'Released',
-} as const;
-
-function stateLabel(state: AttentionState): string {
-  return state[0] + state.slice(1).toLowerCase();
-}
-
-function stateColor(state: AttentionState, colors: ReturnType<typeof useAppTheme>['colors']): string {
-  if (state === 'ACTING') return colors.accent;
-  if (state === 'RUMINATING') return colors.danger;
-  if (state === 'PLANNED') return colors.success;
-  return colors.warning;
-}
 
 export default function MentalThreadsScreen() {
   const { colors } = useAppTheme();
@@ -50,10 +34,10 @@ export default function MentalThreadsScreen() {
 
   const stateOptions = [
     { value: 'ALL' as const, label: 'All', color: colors.textMuted },
-    { value: 'ACTING' as const, label: 'Acting', color: stateColor('ACTING', colors) },
-    { value: 'RUMINATING' as const, label: 'Ruminating', color: stateColor('RUMINATING', colors) },
-    { value: 'PLANNED' as const, label: 'Planned', color: stateColor('PLANNED', colors) },
-    { value: 'PENDING' as const, label: 'Pending', color: stateColor('PENDING', colors) },
+    { value: 'ACTING' as const, label: 'Acting', color: threadStateColors.ACTING },
+    { value: 'RUMINATING' as const, label: 'Ruminating', color: threadStateColors.RUMINATING },
+    { value: 'PLANNED' as const, label: 'Planned', color: threadStateColors.PLANNED },
+    { value: 'PENDING' as const, label: 'Pending', color: threadStateColors.PENDING },
   ];
 
   const selectedVisible = selected && visible.some(thread => thread.id === selected.id) ? selected : null;
@@ -83,28 +67,8 @@ export default function MentalThreadsScreen() {
           </Card>
           <ChoiceChips value={stateFilter} onChange={setStateFilter} options={stateOptions} />
           <View style={styles.list}>
-            {visible.map(thread => {
-              const isResolved = thread.status === 'CLOSED' && thread.closureType === 'RESOLVED';
-              const loadColor = isResolved ? colors.success : stateColor(thread.attentionState, colors);
-              const label = thread.status === 'CLOSED' && thread.closureType
-                ? closureLabels[thread.closureType]
-                : stateLabel(thread.attentionState);
-              return (
-                <SilentPressable key={thread.id} onPress={() => setSelected(thread)}>
-                  <Card style={styles.thread}>
-                    <View style={styles.threadHeader}>
-                      <AppText variant="heading" numberOfLines={2} style={styles.grow}>{thread.title}</AppText>
-                      <View style={[styles.stateChip, { backgroundColor: `${loadColor}18`, borderColor: loadColor }]}>
-                        <AppText variant="caption" style={{ color: loadColor }}>{label}</AppText>
-                      </View>
-                    </View>
-                    <View accessibilityLabel={`Mental load ${thread.currentMentalLoad} out of 10`} style={[styles.loadTrack, { backgroundColor: colors.border }]}>
-                      <View style={[styles.loadBar, { width: `${thread.currentMentalLoad * 10}%`, backgroundColor: loadColor }]} />
-                    </View>
-                  </Card>
-                </SilentPressable>
-              );
-            })}
+            {visible.map(thread => <ThreadCard key={thread.id} thread={thread} onPress={() => setSelected(thread)} />)}
+            {!visible.length && <AppText color="muted">No threads here. Capture something on your mind when you need to.</AppText>}
           </View>
         </>
       )}
@@ -117,9 +81,5 @@ export default function MentalThreadsScreen() {
 const styles = StyleSheet.create({
   summary: { gap: 16 }, metrics: { flexDirection: 'row', justifyContent: 'space-between' },
   metric: { alignItems: 'center', gap: 2 }, list: { gap: 10 },
-  thread: { gap: 12 }, threadHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  stateChip: { minHeight: 28, paddingHorizontal: 10, borderRadius: 14, borderWidth: 1, justifyContent: 'center' },
-  loadTrack: { height: 6, borderRadius: 3, overflow: 'hidden' }, loadBar: { height: '100%', borderRadius: 3 },
   capture: { position: 'absolute', right: 18, bottom: 32, zIndex: 1 },
-  grow: { flex: 1, gap: 3 },
 });

@@ -328,14 +328,14 @@ export default function TasksScreen() {
     return buildTaskListItems(tasks, groups).map(item => item.kind === 'task' ? renderTask(item.task) : (
       <View
         key={item.group.groupId}
-        style={[styles.group, { borderWidth: selectedGroupIdSet.has(item.group.groupId) ? 2 : 1, borderColor: selectedGroupIdSet.has(item.group.groupId) ? colors.accent : colors.border, backgroundColor: colors.surface }]}
+        style={[styles.group, { borderWidth: selectedGroupIdSet.has(item.group.groupId) ? 2 : 0, borderLeftWidth: 2, borderColor: selectedGroupIdSet.has(item.group.groupId) ? colors.accent : colors.border, backgroundColor: 'transparent' }]}
       >
         <SilentPressable
           accessibilityRole="button"
           accessibilityLabel={`${collapsedGroupIds.has(item.group.groupId) ? 'Expand' : 'Collapse'} ${item.group.name}`}
           accessibilityState={{ expanded: !collapsedGroupIds.has(item.group.groupId) }}
           onPress={() => toggleGroup(item.group.groupId)}
-          style={({ pressed }) => [styles.groupHeader, !collapsedGroupIds.has(item.group.groupId) && styles.groupHeaderExpanded, { backgroundColor: colors.surface, borderBottomColor: colors.border }, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.groupHeader, !collapsedGroupIds.has(item.group.groupId) && styles.groupHeaderExpanded, { backgroundColor: 'transparent', borderBottomColor: colors.border }, pressed && styles.pressed]}
         >
           <GroupChevron collapsed={collapsedGroupIds.has(item.group.groupId)} color={colors.accent} />
           <View style={styles.groupSelection}>
@@ -367,7 +367,7 @@ export default function TasksScreen() {
           </SilentPressable>
         </SilentPressable>
         {!collapsedGroupIds.has(item.group.groupId) && (
-          <View style={[styles.groupTasks, { backgroundColor: colors.surface }] }>
+          <View style={[styles.groupTasks, { backgroundColor: 'transparent' }] }>
             {item.tasks.map((task, index) => renderTask(
               task,
               true,
@@ -523,12 +523,12 @@ const styles = StyleSheet.create({
   addTaskButton: { position: 'absolute', right: 18, bottom: 18, zIndex: 1 },
   sections: { gap: 20 },
   list: { gap: 10 },
-  group: { borderWidth: 1, borderRadius: 20, overflow: 'hidden' },
+  group: { borderWidth: 0, borderLeftWidth: 2, borderRadius: 0, overflow: 'visible' },
   groupHeader: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
-  groupHeaderExpanded: { borderBottomWidth: StyleSheet.hairlineWidth },
+  groupHeaderExpanded: { borderBottomWidth: 0 },
   groupSelection: { flex: 1, minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 8 },
   groupTitle: { flex: 1 },
   groupSelect: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-  groupTasks: { paddingVertical: 0 },
+  groupTasks: { paddingVertical: 0, paddingLeft: 16 },
   pressed: { opacity: 0.7 },
 });
