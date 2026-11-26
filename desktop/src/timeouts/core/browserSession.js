@@ -4,7 +4,7 @@ const path = require('node:path');
 const { withFileLock } = require('./fileLock');
 const { which } = require('./appTarget');
 const { runningProcesses, endSession } = require('./processes');
-const { readDailyUsage, addDailyUsage, startOfLocalDay, remainingSeconds } = require('./dailyUsage');
+const { readDailyUsage, addDailyUsage, addDailyOpen, startOfLocalDay, remainingSeconds } = require('./dailyUsage');
 
 /**
  * One Firefox session opened through a URL timer:
@@ -100,6 +100,7 @@ function grantBrowserRule(paths, url, rule) {
             const shortened = end < session.deadline;
             if (shortened) session.deadline = end;
             writeSession(paths, session);
+            addDailyOpen(paths, 'urls', url);
             return { session, created: false, shortened };
         }
         const created = {
@@ -112,6 +113,7 @@ function grantBrowserRule(paths, url, rule) {
             target: firefoxTarget(paths.home),
         };
         writeSession(paths, created);
+        addDailyOpen(paths, 'urls', url);
         return { session: created, created: true, shortened: false };
     });
 }

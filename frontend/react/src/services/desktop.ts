@@ -39,6 +39,21 @@ export interface TimedApp {
     settings: AppPauseSettings | null;
     // Seconds the app has run today, counted only while it has a daily limit.
     usedTodaySeconds?: number;
+    // Auto-close sessions started today. Absent in older desktop builds.
+    opensToday?: number;
+    // The auto-close session being timed now, if any. Absent in older desktop builds.
+    session?: AppSessionStatus | null;
+}
+
+// 'paused' while every window is minimized (rules that leave out minimized time); 'closed' when
+// the app quit before its deadline, which reopening it continues.
+export type AppSessionState = 'starting' | 'running' | 'paused' | 'closed';
+
+export interface AppSessionStatus {
+    // Epoch ms; moves later while the session is paused.
+    deadline: number;
+    totalSeconds: number;
+    state: AppSessionState;
 }
 
 export interface SiteTimer {
@@ -50,6 +65,8 @@ export interface SiteTimer {
     dailyLimitSeconds: number;
     message: string;
     usedTodaySeconds?: number;
+    // Firefox sessions the site was opened in today. Absent in older desktop builds.
+    opensToday?: number;
 }
 
 // Boundaries change only after the password and a short wait. Times are epoch ms; 0 while locked.
@@ -97,7 +114,7 @@ export interface DesktopTimeouts {
     saveApp: (appId: string, settings: AppPauseSettings) => Promise<void>;
     removeApp: (appId: string) => Promise<void>;
     // Returns the normalized URL the timer was saved under.
-    saveUrl: (previousUrl: string | null, url: string, settings: Omit<SiteTimer, 'url' | 'usedTodaySeconds'>) => Promise<string>;
+    saveUrl: (previousUrl: string | null, url: string, settings: Omit<SiteTimer, 'url' | 'usedTodaySeconds' | 'opensToday'>) => Promise<string>;
     removeUrl: (url: string) => Promise<void>;
     // Absent in desktop builds that predate the Boundaries password. unlockEditing rejects a wrong password.
     editStatus?: () => Promise<BoundaryEditStatus>;

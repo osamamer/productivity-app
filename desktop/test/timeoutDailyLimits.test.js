@@ -54,8 +54,8 @@ test('daily usage adds up within a day and starts again from zero the next day',
     addDailyUsage(paths, 'apps', 'spotify', 30, noon);
     addDailyUsage(paths, 'apps', 'spotify', 15, noon);
     addDailyUsage(paths, 'urls', URL, 60, noon);
-    assert.deepEqual(readDailyUsage(paths, noon), { date: '2026-11-20', apps: { spotify: 45 }, urls: { [URL]: 60 } });
-    assert.deepEqual(readDailyUsage(paths, noon + 86_400_000), { date: '2026-11-21', apps: {}, urls: {} });
+    assert.deepEqual(readDailyUsage(paths, noon), { date: '2026-11-20', apps: { spotify: 45 }, urls: { [URL]: 60 }, opens: { apps: {}, urls: {} } });
+    assert.deepEqual(readDailyUsage(paths, noon + 86_400_000), { date: '2026-11-21', apps: {}, urls: {}, opens: { apps: {}, urls: {} } });
 });
 
 // ---- Firefox sites ----
@@ -108,6 +108,16 @@ test('opening a site with a longer timer in a running session keeps the earlier 
     const { session, shortened } = grantBrowserRule(paths, URL, { ...siteRule, dailyLimitSeconds: 0, closeAfterSeconds: 3600 });
     assert.equal(shortened, false);
     assert.ok(Math.abs(session.deadline - (now + 300)) < 2);
+});
+
+test('each site opened into a Firefox session counts as one open today, however often it is reopened', () => {
+    const { paths } = tempPaths();
+    fakeFirefox(paths);
+    const rule = { ...siteRule, dailyLimitSeconds: 0 };
+    grantBrowserRule(paths, URL, rule);
+    grantBrowserRule(paths, URL, rule);
+    grantBrowserRule(paths, 'https://news.com/', rule);
+    assert.deepEqual(readDailyUsage(paths).opens.urls, { [URL]: 1, 'https://news.com/': 1 });
 });
 
 test('time in a Firefox session counts toward the site from when it was opened, and is kept when the session ends', async () => {

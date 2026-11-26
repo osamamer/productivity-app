@@ -18,12 +18,18 @@ const EXPECT_MS = 60_000;
  * unless its rule leaves out minimized time: then only while one of its windows is on screen.
  * A rule may minimize the app instead of closing it; it is minimized again whenever restored.
  *
+ * While an auto-close session times the app, that session's countdown (already cut to the daily
+ * time left) is the one shown, so this shows no second countdown or warnings of its own.
+ *
  * Limitation: checks every five seconds, so an app may run a few seconds past its limit, and
  * nothing is counted while Claritard is not running.
  */
 class DailyLimitMonitor {
-    constructor({ paths, loadConfig, popups, notify, appearance, onChange, windows = NO_WINDOW_CONTROL }) {
+    constructor({
+        paths, loadConfig, popups, notify, appearance, onChange, windows = NO_WINDOW_CONTROL, isTimed = () => false,
+    }) {
         this.paths = paths;
+        this.isTimed = isTimed;
         this.windows = windows;
         this.loadConfig = loadConfig;
         this.popups = popups;
@@ -96,7 +102,7 @@ class DailyLimitMonitor {
             }));
         }
         if (left > 0) {
-            if (!counting) {
+            if (!counting || this.isTimed(app.identity)) {
                 this.popups.close(`daily-${app.identity}`);
                 return;
             }

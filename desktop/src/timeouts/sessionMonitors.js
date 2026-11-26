@@ -8,6 +8,8 @@ const { countsNow } = require('./core/windows');
 const { NO_WINDOW_CONTROL, applyTimeUp } = require('./timeUp');
 const { readSession, expireBrowser, hasTimedBrowserTab } = require('./core/browserSession');
 const { scheduleCommand, cancelUnit } = require('./core/systemd');
+const { appUsageToday } = require('./core/appDailyLimits');
+const { addDailyOpen } = require('./core/dailyUsage');
 
 const CHECK_MS = 1000;
 const START_WAIT_MS = 60_000;
@@ -57,6 +59,9 @@ class Warnings {
  * the app's windows is on screen. One whose rule minimizes instead of closing (`onTimeUp`) is
  * then held: its windows are minimized again whenever they are restored, until the app quits or
  * is opened again through its launcher, which starts a new session.
+ *
+ * A session never outlasts the app's daily limit: with 15 minutes left today, a 30 minute
+ * auto-close starts at 15.
  */
 class AppSessionMonitor {
     constructor({
@@ -80,6 +85,17 @@ class AppSessionMonitor {
     }
 
     /**
+     * The session being watched for the program with `identity`, for the Boundaries page:
+     * `{ deadline, totalSeconds, state }` with state 'running', 'paused' (minimized) or 'closed'
+     * (the app quit before its deadline), or null.
+     */
+    status(identity) {
+        const live = this.active.get(identity);
+        if (!live?.session) return null;
+        return { deadline: live.session.deadline, totalSeconds: live.session.totalSeconds, state: live.state };
+    }
+
+    /**
      * True when `entry`'s app still has time left from an earlier open, so it may open again
      * without a countdown. Makes sure that session is being watched.
      */
@@ -98,7 +114,8 @@ class AppSessionMonitor {
         const identity = targetIdentity(target);
         this.release(identity);
         if (this.active.has(identity)) return;
-        this.active.set(identity, null);
+        const live = { session: null, state: 'starting' };
+        this.active.set(identity, live);
         this.onChange();
         try {
             let processes = [];
@@ -107,24 +124,46 @@ class AppSessionMonitor {
                 if (!processes.length) await sleep(START_POLL_MS);
             }
             if (!processes.length) return;
+            const seconds = this.sessionSeconds(entry);
             const session = {
                 id: `${identity}-${Date.now()}`,
                 identity,
                 name: entry.name,
                 target,
                 processes,
-                totalSeconds: entry.closeAfterSeconds,
-                deadline: Date.now() + entry.closeAfterSeconds * 1000,
+                totalSeconds: seconds,
+                deadline: Date.now() + seconds * 1000,
                 countMinimized: entry.countMinimized !== false,
                 onTimeUp: entry.onTimeUp ?? 'close',
             };
+            this.countOpen(identity);
             this.scheduleBackstop(session);
-            await this.watch(session);
+            await this.watch(session, live);
         } catch (error) {
             console.error(`Could not time ${entry.name}:`, error);
         } finally {
             this.active.delete(identity);
             this.onChange();
+        }
+    }
+
+    /** The auto-close time, cut short by what is left of the app's daily limit. */
+    sessionSeconds(entry) {
+        if (!entry.dailyLimitSeconds) return entry.closeAfterSeconds;
+        try {
+            const left = appUsageToday(this.paths, entry).leftSeconds;
+            return Math.max(1, Math.ceil(Math.min(entry.closeAfterSeconds, left)));
+        } catch (error) {
+            console.error(`Could not read today's time for ${entry.name}:`, error);
+            return entry.closeAfterSeconds;
+        }
+    }
+
+    countOpen(identity) {
+        try {
+            addDailyOpen(this.paths, 'apps', identity);
+        } catch (error) {
+            console.error('Could not count an app session:', error);
         }
     }
 
@@ -137,9 +176,10 @@ class AppSessionMonitor {
             }
             const identity = session.identity ?? targetIdentity(session.target);
             if (this.active.has(identity)) continue;
-            this.active.set(identity, null);
+            const live = { session, state: 'running' };
+            this.active.set(identity, live);
             this.onChange();
-            void this.watch(session).finally(() => {
+            void this.watch(session, live).finally(() => {
                 this.active.delete(identity);
                 this.onChange();
             });
@@ -186,7 +226,8 @@ class AppSessionMonitor {
      * the "closes in" countdown is hidden; if the app runs again before the deadline its new
      * processes take over the session, and they are the ones ended when time is up.
      */
-    async watch(session) {
+    async watch(session, live = {}) {
+        live.session = session;
         const warnings = new Warnings({
             name: session.name, totalSeconds: session.totalSeconds, notify: this.notify, action: session.onTimeUp,
         });
@@ -200,6 +241,7 @@ class AppSessionMonitor {
                 const running = runningProcesses(session.target);
                 const same = sameSession(session.target, session.processes, running);
                 if (same && !countsNow(session, this.windows.isShowing(session.target, session.processes))) {
+                    live.state = 'paused';
                     session.deadline += now - last;
                     last = now;
                     if (pausedSince === null) {
@@ -221,6 +263,7 @@ class AppSessionMonitor {
                     this.scheduleBackstop(session);
                 }
                 const remaining = Math.max(0, (session.deadline - now) / 1000);
+                live.state = same || running.length ? 'running' : 'closed';
                 if (same) {
                     this.showCountdown(session);
                     shown = true;

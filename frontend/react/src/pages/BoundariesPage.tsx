@@ -6,6 +6,7 @@ import { AppPausesSection } from '../components/boundaries/AppPausesSection';
 import { SiteTimersSection } from '../components/boundaries/SiteTimersSection';
 import { BoundaryEditLockCard } from '../components/boundaries/BoundaryEditLockCard';
 import { CountdownDisplaySection } from '../components/boundaries/CountdownDisplaySection';
+import { BoundaryStatusSection } from '../components/boundaries/BoundaryStatusSection';
 import { useBoundaryEditLock } from '../components/boundaries/useBoundaryEditLock';
 import { desktopTimeouts, type DesktopTimeouts, type TimeoutState } from '../services/desktop';
 
@@ -61,6 +62,7 @@ function Boundaries({ timeouts }: { timeouts: DesktopTimeouts }) {
 
             {state && (
                 <Box sx={{ display: 'grid', gap: 3 }}>
+                    <BoundaryStatusSection state={state} />
                     <BoundaryEditLockCard lock={editLock} onError={onError} />
                     <AppPausesSection
                         apps={state.apps}

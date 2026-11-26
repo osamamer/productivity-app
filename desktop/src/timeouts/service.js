@@ -9,7 +9,8 @@ const { installedLaunchers } = require('./core/installedApps');
 const { iconDataUrl } = require('./core/icons');
 const { launchOriginal, spawnDetached } = require('./core/launchOriginal');
 const { activeSession, expireBrowser, readSession, urlSecondsToday } = require('./core/browserSession');
-const { appUsageToday } = require('./core/appDailyLimits');
+const { appUsageToday, entryProgram } = require('./core/appDailyLimits');
+const { readDailyUsage } = require('./core/dailyUsage');
 const { EditLock } = require('./core/editLock');
 const { watchDir } = require('./core/fileWatch');
 const { installBrowserHost, refreshBrowserHost, isBrowserHostInstalled } = require('./browserHost');
@@ -64,7 +65,11 @@ class TimeoutService {
         };
         this.appSessions = new AppSessionMonitor({ ...shared, command });
         this.browserSessions = new BrowserSessionMonitor(shared);
-        this.dailyLimits = new DailyLimitMonitor({ ...shared, loadConfig: () => this.launchers.load() });
+        this.dailyLimits = new DailyLimitMonitor({
+            ...shared,
+            loadConfig: () => this.launchers.load(),
+            isTimed: identity => this.appSessions.status(identity) !== null,
+        });
         this.editLock = new EditLock({ file: this.paths.passwordFile });
         installCountdownIpc(sender => [...this.countdowns.values()].find(countdown => countdown.webContents === sender));
     }
@@ -233,8 +238,10 @@ class TimeoutService {
 
     getState() {
         const config = this.launchers.load();
+        const opens = readDailyUsage(this.paths).opens;
         const apps = this.appGroups(config).map(({ representative, members }) => {
             const entry = config.apps[representative.id] ?? null;
+            const identity = entry && this.programIdentity(entry);
             return {
                 id: representative.id,
                 name: representative.name,
@@ -250,6 +257,8 @@ class TimeoutService {
                     onTimeUp: entry.onTimeUp ?? 'close',
                 },
                 usedTodaySeconds: entry?.dailyLimitSeconds ? this.appSecondsToday(entry) : 0,
+                opensToday: identity ? opens.apps[identity] ?? 0 : 0,
+                session: identity ? this.appSessions.status(identity) : null,
             };
         });
         const current = readSession(this.paths);
@@ -260,6 +269,7 @@ class TimeoutService {
                 ...rule,
                 dailyLimitSeconds: rule.dailyLimitSeconds ?? 0,
                 usedTodaySeconds: Math.round(urlSecondsToday(this.paths, url, current)),
+                opensToday: opens.urls[url] ?? 0,
             }));
         const session = activeSession(this.paths);
         return {
@@ -276,6 +286,15 @@ class TimeoutService {
                 unlockedUrls: session ? session.rules : [],
             },
         };
+    }
+
+    programIdentity(entry) {
+        try {
+            return entryProgram(entry).identity;
+        } catch (error) {
+            console.error(`Could not read the launcher of ${entry.name}:`, error);
+            return null;
+        }
     }
 
     appSecondsToday(entry) {

@@ -16,11 +16,12 @@ function startOfLocalDay(ms) {
 }
 
 function emptyUsage(date) {
-    return { date, apps: {}, urls: {} };
+    return { date, apps: {}, urls: {}, opens: { apps: {}, urls: {} } };
 }
 
 /**
- * Seconds used today toward daily limits: `{ date, apps: {identity: s}, urls: {url: s} }`.
+ * Seconds used today toward daily limits, `{ date, apps: {identity: s}, urls: {url: s} }`, and
+ * how many timed sessions each started today, `opens: { apps: {identity: n}, urls: {url: n} }`.
  * Only today matters, so a file from an earlier day reads as empty.
  */
 function readDailyUsage(paths, now = Date.now()) {
@@ -28,7 +29,8 @@ function readDailyUsage(paths, now = Date.now()) {
     try {
         const parsed = JSON.parse(fs.readFileSync(paths.dailyUsageFile, 'utf8'));
         if (parsed?.date !== today) return emptyUsage(today);
-        return { date: today, apps: parsed.apps ?? {}, urls: parsed.urls ?? {} };
+        const opens = { apps: parsed.opens?.apps ?? {}, urls: parsed.opens?.urls ?? {} };
+        return { date: today, apps: parsed.apps ?? {}, urls: parsed.urls ?? {}, opens };
     } catch (error) {
         if (error.code !== 'ENOENT') console.error('Could not read the daily limit usage:', error);
         return emptyUsage(today);
@@ -41,9 +43,22 @@ function readDailyUsage(paths, now = Date.now()) {
  */
 function addDailyUsage(paths, kind, key, seconds, now = Date.now()) {
     if (!(seconds > 0)) return;
+    updateDailyUsage(paths, now, usage => {
+        usage[kind][key] = (usage[kind][key] ?? 0) + seconds;
+    });
+}
+
+/** Counts one more timed session started today for `key` (`kind` is "apps" or "urls"). */
+function addDailyOpen(paths, kind, key, now = Date.now()) {
+    updateDailyUsage(paths, now, usage => {
+        usage.opens[kind][key] = (usage.opens[kind][key] ?? 0) + 1;
+    });
+}
+
+function updateDailyUsage(paths, now, change) {
     withFileLock(paths.dailyUsageLockFile, () => {
         const usage = readDailyUsage(paths, now);
-        usage[kind][key] = (usage[kind][key] ?? 0) + seconds;
+        change(usage);
         fs.mkdirSync(path.dirname(paths.dailyUsageFile), { recursive: true });
         const temporary = `${paths.dailyUsageFile}.tmp`;
         fs.writeFileSync(temporary, `${JSON.stringify(usage)}\n`);
@@ -56,4 +71,4 @@ function remainingSeconds(limitSeconds, usedSeconds) {
     return limitSeconds > 0 ? Math.max(0, limitSeconds - usedSeconds) : Infinity;
 }
 
-module.exports = { localDate, startOfLocalDay, readDailyUsage, addDailyUsage, remainingSeconds };
+module.exports = { localDate, startOfLocalDay, readDailyUsage, addDailyUsage, addDailyOpen, remainingSeconds };

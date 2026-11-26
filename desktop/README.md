@@ -121,7 +121,9 @@ computer, in local and cloud mode alike. It replaces the separate App Timeout to
   shows the time left, notifications warn at one minute and ten seconds, then the app gets SIGTERM
   and, five seconds later, SIGKILL (Flatpaks: `flatpak kill`). Closing the app does not end its
   time: reopening it before the deadline skips the countdown and continues the same session (the
-  "closes in" window comes back). Sessions are saved to disk and a
+  "closes in" window comes back). With a daily limit, a session starts from whichever is shorter,
+  its auto-close or the time left today, and the daily limit then shows no countdown of its own.
+  Sessions are saved to disk and a
   systemd user timer is armed as a backstop, so the limit holds even if Claritard quits.
 - **Firefox site timers.** The **Claritard URL Gate** extension (`firefox-extension/`) sends timed
   sites to a countdown page. Opening one starts a Firefox session; every timed site opened in it
@@ -145,6 +147,9 @@ computer, in local and cloud mode alike. It replaces the separate App Timeout to
   Site time counts from opening the site until its Firefox session ends, so opening a site with
   little time left today brings that session's end forward. Counts live in
   `~/.local/share/Claritard/timeouts/daily-usage.json` and reset at local midnight.
+- **Today.** The top of the Boundaries tab lists every app and site with a limit: time left today,
+  the session running now (paused, closed early, or how long until it ends) and how many sessions
+  started today (`opens` in `daily-usage.json`; a site counts once per Firefox session).
 - **Minimized time and minimizing (per app, KDE Plasma).** An app's rule can leave out the time
   its windows are all minimized (or hidden to the tray): auto-close moves its deadline and the
   daily limit stops counting until a window is restored. It can also minimize the app instead of
