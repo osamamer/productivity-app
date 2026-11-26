@@ -1,6 +1,7 @@
 import React, { ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
+    Alert,
     Box,
     Button,
     ButtonBase,
@@ -189,7 +190,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     const [groupTaskInputGeneration, setGroupTaskInputGeneration] = useState(0);
     const [bulkDateAnchorEl, setBulkDateAnchorEl] = useState<HTMLElement | null>(null);
     const [bulkDateDraft, setBulkDateDraft] = useState(() => new Date());
-    const { groups, setGroups, collapsedGroupIds, setCollapsedGroupIds, refreshGroups } = useHomeTaskGroups();
+    const { groups, setGroups, groupLoadFailed, collapsedGroupIds, setCollapsedGroupIds, refreshGroups } = useHomeTaskGroups();
     const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
     const groupNameInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
     const [draggedTaskIds, setDraggedTaskIds] = useState<string[]>([]);
@@ -3629,7 +3630,11 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
                         </Box>
                     ) : homeContentReady ? (
                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-                            <CircularProgress size={20} aria-label="Loading task groups" />
+                            {groupLoadFailed ? (
+                                <Alert severity="warning" action={<Button onClick={() => void refreshGroups(true)}>Retry</Button>}>
+                                    Could not load task groups.
+                                </Alert>
+                            ) : <CircularProgress size={20} aria-label="Loading task groups" />}
                         </Box>
                     ) : null}
 

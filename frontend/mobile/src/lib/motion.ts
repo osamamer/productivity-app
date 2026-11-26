@@ -4,7 +4,7 @@ if (Platform.OS === 'android') {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
 }
 
-export function animateLayout(duration = 440) {
+export function animateLayout(duration = 220) {
   LayoutAnimation.configureNext({
     duration,
     create: {

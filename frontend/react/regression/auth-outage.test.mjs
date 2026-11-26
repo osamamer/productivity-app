@@ -155,3 +155,24 @@ test('a token request on a dead connection gives up instead of hanging', async (
     { name: 'TimeoutError' },
   );
 });
+
+
+test('fetch API reads refresh an expired session before loading tasks after suspend', async () => {
+  const { apiFetch } = await viteServer.ssrLoadModule('/src/services/utils/apiFetch.ts');
+  const freshAccessToken = jwt({ sub: 'user-1', iat: nowSeconds(), exp: nowSeconds() + 300 });
+  const requests = [];
+  globalThis.fetch = async (url, init) => {
+    requests.push(String(url));
+    if (String(url).includes('/token')) {
+      return new Response(JSON.stringify({ access_token: freshAccessToken, refresh_token: refreshToken }));
+    }
+    assert.equal(new Headers(init.headers).get('Authorization'), `Bearer ${freshAccessToken}`);
+    return new Response(JSON.stringify([{ taskId: 'done', completed: true }]));
+  };
+  const response = await apiFetch('https://app.test/api/v1/tasks/main', {
+    headers: { Authorization: `Bearer ${expiredAccessToken}` },
+  });
+  assert.equal((await response.json())[0].completed, true);
+  assert.equal(requests.length, 2);
+  assert.ok(requests[0].includes('/token'));
+});

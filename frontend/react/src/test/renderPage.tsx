@@ -1,4 +1,5 @@
 import { render } from '@testing-library/react';
+import type { HttpHandler } from 'msw';
 import type { ReactElement } from 'react';
 import { vi } from 'vitest';
 import { server } from './server';
@@ -13,6 +14,8 @@ export type PageFixture = {
     events?: CalendarEvent[];
     now?: string;
     path?: string;
+    /** Responses that take precedence over the fake API from the first request on. */
+    handlers?: HttpHandler[];
 };
 
 /**
@@ -22,12 +25,13 @@ export type PageFixture = {
  */
 export async function renderPage(
     loadPage: () => Promise<ReactElement>,
-    { tasks, groups, events, now = '2026-11-26T10:00:00Z', path = '/' }: PageFixture = {},
+    { tasks, groups, events, now = '2026-11-26T10:00:00Z', path = '/', handlers = [] }: PageFixture = {},
 ): Promise<FakeBackend> {
     vi.useFakeTimers({ now: new Date(now), shouldAdvanceTime: true, toFake: ['Date'] });
     vi.resetModules();
     const backend = createFakeBackend({ today: now.slice(0, 10), tasks, groups, events });
     server.use(...backend.handlers);
+    server.use(...handlers);
 
     const [{ MemoryRouter }, { AppThemeProvider }, { UserProvider }, { PomodoroProvider }, { TaskProvider }, page] = await Promise.all([
         import('react-router-dom'),

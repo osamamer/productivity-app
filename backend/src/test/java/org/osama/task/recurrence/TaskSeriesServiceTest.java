@@ -149,6 +149,43 @@ class TaskSeriesServiceTest {
     }
 
     @Test
+    void changingSeriesTimeKeepsHistoricalAndCompletedOccurrencesWithoutCreatingCopies() {
+        LocalDate today = LocalDate.now(java.time.ZoneOffset.UTC);
+        LocalDateTime start = today.minusDays(3).atTime(9, 0);
+        NewTaskRequest request = request(start);
+        request.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        request.setRecurrenceEndDate(today.plusDays(2));
+        Task first = taskSeriesService.createSeries(request, USER_ID);
+        List<Task> original = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId());
+        original.forEach(task -> {
+            if (!task.getSeriesOccurrenceAt().toLocalDate().equals(today.plusDays(2))
+                    && !task.getSeriesOccurrenceAt().toLocalDate().equals(today.minusDays(1))) {
+                UpdateTaskRequest completion = new UpdateTaskRequest();
+                completion.setCompleted(true);
+                taskService.updateTask(task.getTaskId(), completion, USER_ID);
+            }
+        });
+
+        for (int hour : List.of(13, 15, 9)) {
+            TaskSeriesUpdateRequest update = new TaskSeriesUpdateRequest();
+            update.setStartDateTime(start.withHour(hour));
+            update.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+            update.setRecurrenceEndDate(today.plusDays(2));
+            update.setTimeZone("UTC");
+            taskSeriesService.updateSeries(first.getTaskSeriesId(), update, USER_ID);
+            taskSeriesService.expandActiveSeries();
+
+            List<Task> occurrences = taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId());
+            assertEquals(original.stream().map(Task::getTaskId).toList(), occurrences.stream().map(Task::getTaskId).toList());
+            assertEquals(4, occurrences.stream().filter(Task::isCompleted).count());
+            assertEquals(9, occurrences.get(2).getScheduledPerformDateTime().getHour());
+            assertTrue(occurrences.stream().filter(Task::isCompleted)
+                    .allMatch(task -> task.getScheduledPerformDateTime().getHour() == 9));
+            assertEquals(hour, occurrences.get(5).getScheduledPerformDateTime().getHour());
+        }
+    }
+
+    @Test
     void changingOnlyTheSeriesTimeUpdatesTodayAndKeepsDeletedDatesDeleted() {
         LocalDate today = LocalDate.now();
         LocalDateTime start = today.atTime(12, 0);

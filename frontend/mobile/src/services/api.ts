@@ -1,3 +1,5 @@
+import { invalidatePages } from '@/lib/pageCache';
+import { pageInvalidationPrefixes } from '@/lib/pageInvalidation';
 import { appConfig } from '@/lib/config';
 import { GENERIC_ERROR_MESSAGE } from '@/lib/errors';
 import type {
@@ -81,6 +83,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     console.error('API request failed:', { path, status: response.status }, new Error(detail));
     throw new Error(GENERIC_ERROR_MESSAGE);
   }
+  if (options.method && options.method !== 'GET') invalidatePages(pageInvalidationPrefixes(path));
   if (response.status === 204 || response.headers.get('content-length') === '0') {
     return undefined as T;
   }
@@ -140,6 +143,7 @@ export const api = {
         console.error('Calendar upload failed:', { status: response.status });
         throw new Error(GENERIC_ERROR_MESSAGE);
       }
+      invalidatePages(pageInvalidationPrefixes('/api/v1/calendar-sources'));
       return response.json() as Promise<CalendarSource>;
     },
   },

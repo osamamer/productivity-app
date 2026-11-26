@@ -177,7 +177,7 @@ export function useTaskManager() {
     ) => {
         allTasksLoadModeRef.current = loadMode;
         const pendingRequest = taskRequestsRef.current.get(loadMode);
-        if (pendingRequest) return pendingRequest;
+        if (pendingRequest && !force) return pendingRequest;
 
         // Cache invalidation cannot cancel a fetch already in progress. Track
         // both the request and its data generation so late responses cannot
@@ -240,10 +240,6 @@ export function useTaskManager() {
                 if (snapshotChanged) {
                     setTaskState(prev => {
                         const next = withTaskBuckets(prev, reconciledTasks);
-                        if (loadMode === 'all' && todayTasksLoadedRef.current && prev.todayTasks.length > 0
-                            && prev.bucketDateKey === currentBucketDateKey()) {
-                            next.todayTasks = prev.todayTasks;
-                        }
                         return {
                             ...next,
                             // Keep the user's current selection across refreshes. On the
@@ -403,18 +399,9 @@ export function useTaskManager() {
     }, [homeDayEndHour, invalidatePendingTaskLoads, refreshTaskBuckets]);
 
     useEffect(() => {
-        let refreshing = false;
         const syncTasks = async () => {
-            if (!tasksLoadedRef.current
-                || refreshing
-                || document.visibilityState !== 'visible'
-                || !navigator.onLine) return;
-            refreshing = true;
-            try {
-                await refreshTaskBuckets(true, allTasksLoadModeRef.current, true);
-            } finally {
-                refreshing = false;
-            }
+            if (document.visibilityState !== 'visible' || !navigator.onLine) return;
+            await refreshTaskBuckets(true, allTasksLoadModeRef.current, true);
         };
         // The shared heartbeat already skips hidden or offline windows.
         return subscribeToAppRefresh(() => void syncTasks());

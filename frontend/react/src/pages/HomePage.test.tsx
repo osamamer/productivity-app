@@ -147,4 +147,23 @@ describe('Home (labor)', () => {
         expect(await screen.findByText('Write report')).toBeInTheDocument();
         expect(await screen.findByText("Today's events could not be shown.")).toBeInTheDocument();
     });
+
+    it('offers a retry when task groups fail to load, and shows them once they do', async () => {
+        const user = userEvent.setup();
+        let failGroups = true;
+        await renderHome({
+            tasks: [todayTask('Write report')],
+            handlers: [http.get(`${API}/api/v1/task-groups`, () => (failGroups
+                ? new HttpResponse(null, { status: 500 })
+                : HttpResponse.json([])))],
+        });
+
+        const alert = await screen.findByRole('alert', {}, { timeout: 8000 });
+        expect(alert).toHaveTextContent('Could not load task groups.');
+        failGroups = false;
+        await user.click(within(alert).getByRole('button', { name: 'Retry' }));
+
+        expect(await screen.findByText('Write report')).toBeInTheDocument();
+        expect(screen.queryByText('Could not load task groups.')).not.toBeInTheDocument();
+    }, 15000);
 });

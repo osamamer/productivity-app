@@ -7,24 +7,25 @@ import { useEffect } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { PageWrapper } from '../components/PageWrapper';
 import { getLastMentalDestination, rememberMentalDestination } from '../services/utils/mentalNavigation';
+import { featureDescriptions } from '../../../shared/featureDescriptions';
 import { warmMentalData } from '../services/bootstrap/mentalDataPrefetch';
 
 const mentalDestinations = [
     {
         title: 'Mental state',
-        description: 'Check in with how you feel and get a little clarity for right now.',
+        description: featureDescriptions.mentalState,
         target: '/mental-state',
         Icon: MoodRoundedIcon,
     },
     {
         title: 'Mental threads',
-        description: 'Untangle the thoughts and concerns that are taking up space.',
+        description: featureDescriptions.mentalThreads,
         target: '/mental-threads',
         Icon: PsychologyRoundedIcon,
     },
     {
         title: 'Meditation',
-        description: 'Take a quiet pause with a guided focus session and calming sounds.',
+        description: featureDescriptions.meditation,
         target: '/meditation',
         Icon: SelfImprovementRoundedIcon,
     },

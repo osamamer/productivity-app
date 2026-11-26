@@ -73,16 +73,17 @@ export const taskGroupService = {
     },
 
     async getGroups(forceRefresh = false): Promise<TaskGroup[]> {
-        if (forceRefresh) groupsCache.invalidate(groupsCacheKey());
-        return groupsCache.get(groupsCacheKey(), async () => {
+        const key = groupsCacheKey();
+        if (forceRefresh) groupsCache.invalidate(key);
+        const groups = await groupsCache.get(key, async () => {
             const response = await apiFetch(GROUP_URL, { headers: getAuthHeaders() });
             if (!response.ok) {
                 throw new Error('Failed to fetch task groups');
             }
-            const groups = await response.json() as TaskGroup[];
-            persistGroups(groups);
-            return groups;
+            return await response.json() as TaskGroup[];
         });
+        if (groupsCache.getCached(key) === groups) persistGroups(groups);
+        return groups;
     },
 
     async createGroup(name: string, taskIds: string[]): Promise<TaskGroup> {

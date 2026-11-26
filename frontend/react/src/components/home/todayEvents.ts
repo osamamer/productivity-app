@@ -1,3 +1,4 @@
+import { isNormalCalendarEvent } from '../../../../shared/calendarEventKind';
 import { addDays, format } from 'date-fns';
 import { expandCalendarEvent } from '../calendar/recurrence';
 import { readEventTimePreferences } from '../../services/utils/inputPreferences';
@@ -81,7 +82,7 @@ export function eventsForToday(events: CalendarEvent[], dayStart: Date): TodayEv
     const todayKey = format(dayStart, 'yyyy-MM-dd');
     const todayEvents: TodayEvent[] = [];
 
-    events.forEach(event => {
+    events.filter(isNormalCalendarEvent).forEach(event => {
         expandCalendarEvent(event, dayStart, dayEnd).forEach(occurrence => {
             if (occurrence.allDay) {
                 if (occurrence.occurrenceDate > todayKey || occurrence.end <= todayKey) return;

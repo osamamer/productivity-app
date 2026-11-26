@@ -19,6 +19,9 @@ export function plannedItems(overview: DayOverview, windowStart: Date, windowEnd
             .filter(occurrence => !occurrence.allDay && occurrence.status !== 'CANCELLED')
             .map((occurrence): PlannedInput => ({
                 id: `event-${occurrence.id}`,
+                eventId: event.id,
+                occurrenceKey: occurrence.occurrenceKey,
+                occurrenceDate: occurrence.occurrenceDate,
                 // A block planned for a task is focus time; its title is the task.
                 kind: event.taskId ? 'focus' : 'event',
                 ...(event.taskId ? { shade: 'focus' as const } : event.activityId ? { shade: 'activity' as const } : {}),
