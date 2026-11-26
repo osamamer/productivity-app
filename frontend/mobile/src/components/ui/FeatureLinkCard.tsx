@@ -15,7 +15,8 @@ export function FeatureLinkCard({ title, description, icon, href }: {
   const { colors } = useAppTheme();
   return (
     <SilentPressable
-      onPress={() => router.push(href)}
+      onPressIn={() => router.prefetch(href)}
+      onPress={() => router.navigate(href)}
       style={({ pressed }) => [styles.card, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.72 }]}>
       <View style={styles.icon}><Ionicons name={icon} size={24} color={colors.accent} /></View>
       <View style={styles.copy}>

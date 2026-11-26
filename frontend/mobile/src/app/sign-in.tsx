@@ -32,14 +32,14 @@ export default function SignInScreen() {
           <View style={[styles.logoWrap, { backgroundColor: colors.accentSoft }]}>
             <Image source={require('../../assets/images/eye-care.png')} style={styles.logo} />
           </View>
-          <AppText variant="display" style={styles.center}>Claritard keeps life from getting overwhelming.</AppText>
+          <AppText variant="display" style={styles.center}>So life doesn’t get overwhelming.</AppText>
           <AppText color="muted" style={styles.center}>
-            Your tasks, focus, reflections, and routines—in one place.
+            A calmer place for everything on your mind.
           </AppText>
         </View>
         <Card style={styles.card}>
           <AppText variant="heading">Welcome back</AppText>
-          <AppText color="muted">Sign in to bring your day, focus sessions, and reflections with you.</AppText>
+          <AppText color="muted">Sign in and pick up where you left off.</AppText>
           {error && <AppText color="danger">{error}</AppText>}
           <AppInput
             label="Email"

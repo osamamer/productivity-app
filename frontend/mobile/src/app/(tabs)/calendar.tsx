@@ -30,10 +30,10 @@ export default function CalendarScreen() {
   const [calendarComposerOpen, setCalendarComposerOpen] = useState(false);
   const [calendarComposerSession, setCalendarComposerSession] = useState(0);
   const [calendarBeingEdited, setCalendarBeingEdited] = useState<Calendar | null>(null);
-  const eventsResource = useAsyncData(() => api.events.all());
-  const calendarsResource = useAsyncData(() => api.calendars.all());
-  const sourcesResource = useAsyncData(() => api.calendarSources.all());
-  const definitionsResource = useAsyncData(() => api.stats.definitions());
+  const eventsResource = useAsyncData(() => api.events.all(), 'events');
+  const calendarsResource = useAsyncData(() => api.calendars.all(), 'calendars');
+  const sourcesResource = useAsyncData(() => api.calendarSources.all(), 'calendar-sources');
+  const definitionsResource = useAsyncData(() => api.stats.definitions(), 'stat-definitions');
   const visibilityRequestIds = useRef(new Map<string, number>());
   const lastSourceRefresh = useRef<number | null>(null);
   const setEventsData = eventsResource.setData;

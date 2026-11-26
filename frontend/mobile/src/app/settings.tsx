@@ -76,7 +76,7 @@ export default function SettingsScreen() {
   } = usePreferences();
   const { confirm, showError } = useAppPopup();
   const { colors, mode, accent, setMode, setAccent } = useAppTheme();
-  const resource = useAsyncData(() => api.preferences.get());
+  const resource = useAsyncData(() => api.preferences.get(), 'preferences');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

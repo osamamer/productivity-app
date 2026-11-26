@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { featureDescriptions } from '../../../shared/featureDescriptions';
 import { Alert, Box, Snackbar, Typography } from '@mui/material';
 import { Navigate } from 'react-router-dom';
 import { AppPausesSection } from '../components/boundaries/AppPausesSection';
@@ -53,7 +54,7 @@ function Boundaries({ timeouts }: { timeouts: DesktopTimeouts }) {
     return (
         <>
             <Typography color="text.secondary" sx={{ mb: { xs: 2, md: 3 }, maxWidth: 640, textAlign: 'left' }}>
-                A moment to choose before the apps and sites that pull you in, and a gentle end once you're there.
+                {featureDescriptions.boundaries}
             </Typography>
 
             {loadError && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{loadError}</Alert>}

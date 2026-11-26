@@ -10,10 +10,10 @@ import { ChoiceChips } from '@/components/ui/ChoiceChips';
 import { Screen } from '@/components/ui/Screen';
 import { SilentPressable } from '@/components/ui/SilentPressable';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
+import { loadMentalThreads } from '@/services/pageResources';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { usePreferences } from '@/providers/PreferencesProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
-import { api } from '@/services/api';
 import type { AttentionState, MentalThread, MentalThreadSummary } from '@/types/models';
 
 interface ThreadData { threads: MentalThread[]; summary: MentalThreadSummary }
@@ -39,10 +39,7 @@ function stateColor(state: AttentionState, colors: ReturnType<typeof useAppTheme
 export default function MentalThreadsScreen() {
   const { colors } = useAppTheme();
   const { showClosedMentalThreads } = usePreferences();
-  const resource = useAsyncData<ThreadData>(async () => {
-    const [threads, summary] = await Promise.all([api.mentalThreads.all(true), api.mentalThreads.summary()]);
-    return { threads, summary };
-  });
+  const resource = useAsyncData<ThreadData>(loadMentalThreads, 'mental-threads');
   const [stateFilter, setStateFilter] = useState<StateFilter>('ALL');
   const [composerOpen, setComposerOpen] = useState(false);
   const [selected, setSelected] = useState<MentalThread | null>(null);

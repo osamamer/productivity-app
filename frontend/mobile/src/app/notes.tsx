@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { router } from 'expo-router';
+import { useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -47,8 +47,7 @@ export default function NotesScreen() {
   const resource = useAsyncData<NotesData>(async () => {
     const [notes, categories] = await Promise.all([api.notes.all(), api.notes.categories()]);
     return { notes, categories };
-  });
-  const { reload } = resource;
+  }, 'notes');
   const [creating, setCreating] = useState(false);
   const [activeFilter, setActiveFilter] = useState<NotesFilter>('all');
   const [selectionMode, setSelectionMode] = useState(false);
@@ -58,13 +57,8 @@ export default function NotesScreen() {
   const [newCategoryOpen, setNewCategoryOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
-  const hasFocusedRef = useRef(false);
   const longPressRef = useRef(false);
 
-  useFocusEffect(useCallback(() => {
-    if (hasFocusedRef.current) void reload();
-    hasFocusedRef.current = true;
-  }, [reload]));
 
   const notes = resource.data?.notes ?? EMPTY_NOTES;
   const categories = resource.data?.categories ?? EMPTY_CATEGORIES;

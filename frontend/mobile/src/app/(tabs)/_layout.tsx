@@ -36,7 +36,7 @@ export default function TabLayout() {
       <Tabs.Screen name="index" options={{ title: 'Today' }} />
       <Tabs.Screen name="tasks" options={{ title: 'Tasks' }} />
       <Tabs.Screen name="calendar" options={{ title: 'Calendar' }} />
-      <Tabs.Screen name="mind" options={{ title: 'Mind' }} />
+      <Tabs.Screen name="mind" options={{ title: 'Mental space' }} />
       <Tabs.Screen name="more" options={{ title: 'More' }} />
     </Tabs>
   );
