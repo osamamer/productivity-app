@@ -915,7 +915,6 @@ export default function TodayScreen() {
                   styles.group,
                   {
                     borderWidth: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId || draggedGroupId === item.group.groupId ? 2 : 0,
-                    borderLeftWidth: 2,
                     borderColor: selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId || draggedGroupId === item.group.groupId ? colors.accent : colors.border,
                     backgroundColor: draggedGroupId === item.group.groupId ? colors.surface : 'transparent',
                     overflow: dragSource ? 'visible' : 'hidden',
@@ -934,6 +933,7 @@ export default function TodayScreen() {
                       pressed && styles.pressed,
                     ]}
                   >
+                    {!collapsedGroupIds.has(item.group.groupId) && <View pointerEvents="none" style={[styles.groupConnector, { backgroundColor: colors.border }]} />}
                     <GroupChevron
                       collapsed={collapsedGroupIds.has(item.group.groupId)}
                       color={selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? colors.accent : colors.textMuted}
@@ -982,7 +982,7 @@ export default function TodayScreen() {
                   <View
                     style={[
                       styles.groupTasks,
-                      { backgroundColor: 'transparent' },
+                      { borderLeftColor: colors.border },
                     ]}>
                     {item.tasks.map(task => (
                         <TaskRow
@@ -1167,14 +1167,15 @@ const styles = StyleSheet.create({
   spaceBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14 },
   taskActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   list: { gap: TASK_LIST_GAP },
-  group: { borderWidth: 0, borderLeftWidth: 2, borderRadius: 0, overflow: 'visible' },
+  group: { borderWidth: 0, borderRadius: 0, overflow: 'visible' },
   groupHeader: { minHeight: 64, borderTopLeftRadius: 19, borderTopRightRadius: 19, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
   groupHeaderCollapsed: { borderBottomLeftRadius: 19, borderBottomRightRadius: 19 },
   groupHeaderExpanded: { borderBottomWidth: 0 },
   groupSelection: { flex: 1, minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 8 },
   groupTitle: { flex: 1 },
   groupSelect: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-  groupTasks: { paddingVertical: 0, paddingLeft: 16 },
+  groupTasks: { paddingVertical: 0, marginLeft: 22, paddingLeft: 12, borderLeftWidth: 2 },
+  groupConnector: { position: 'absolute', left: 22, top: 48, bottom: 0, width: 2 },
   groupDropIndicator: { position: 'absolute', left: 12, right: 12, height: 3, borderRadius: 2, zIndex: 22, elevation: 4, shadowOpacity: 0.5, shadowRadius: 4 },
   groupDropIndicatorBefore: { top: -6.5 },
   groupDropIndicatorAfter: { bottom: -6.5 },

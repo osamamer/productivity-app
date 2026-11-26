@@ -1,14 +1,13 @@
 import { useCallback, useRef, useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
 import { useFocusEffect } from 'expo-router';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { CalendarComposerSheet, CalendarManagementContent } from '@/components/calendar/CalendarControls';
 import { CalendarDisplayButton, CalendarManagementButton, MonthCalendar } from '@/components/calendar/MonthCalendar';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
 import { AppText } from '@/components/ui/AppText';
-import { AppPopup } from '@/components/ui/AppPopup';
 import { ModalSheet } from '@/components/ui/ModalSheet';
 import { ErrorView } from '@/components/ui/StateView';
 import { Screen } from '@/components/ui/Screen';
@@ -275,13 +274,11 @@ export default function CalendarScreen() {
         onTaskFutureOccurrencesDeleted={deleteTaskFutureOccurrences}
         displayOptionsOpen={displayOptionsOpen}
         onDisplayOptionsOpenChange={setDisplayOptionsOpen} />
-      <AppPopup
+      <ModalSheet
         visible={calendarManagerOpen}
-        showIcon={false}
         title="Calendars"
         onClose={() => setCalendarManagerOpen(false)}
         footer={<AppButton label="Done" onPress={() => setCalendarManagerOpen(false)} />}>
-        <ScrollView style={calendarStyles.calendarManagerScroll} keyboardShouldPersistTaps="handled">
           <CalendarManagementContent
             calendars={calendarsResource.data ?? []}
             sources={sourcesResource.data ?? []}
@@ -291,8 +288,7 @@ export default function CalendarScreen() {
             onImport={() => { setCalendarManagerOpen(false); setTimeout(() => setImportOpen(true), 220); }}
             onSync={syncCalendar}
             onEdit={calendar => openCalendarComposer(calendar)} />
-        </ScrollView>
-      </AppPopup>
+      </ModalSheet>
       <CalendarComposerSheet
         key={`${calendarBeingEdited?.id ?? 'new-calendar'}-${calendarComposerSession}`}
         calendar={calendarBeingEdited}
@@ -319,7 +315,6 @@ export default function CalendarScreen() {
 
 const calendarStyles = StyleSheet.create({
   calendarActions: { position: 'absolute', right: 18, bottom: 24, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  calendarManagerScroll: { maxHeight: '55%' },
 });
 
 const styles = {

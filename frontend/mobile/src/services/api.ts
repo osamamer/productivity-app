@@ -148,6 +148,7 @@ export const api = {
     },
   },
   tasks: {
+    get: (id: string) => apiRequest<Task>(`/api/v1/tasks/${id}`),
     all: () => apiRequest<Task[]>('/api/v1/tasks/main'),
     forDate: (date: string) => apiRequest<Task[]>(`/api/v1/tasks?date=${encodeURIComponent(date)}`),
     scheduled: () => apiRequest<Task[]>('/api/v1/tasks?scheduled=true'),
@@ -180,9 +181,13 @@ export const api = {
       recurrenceUnit: 'DAYS' | 'WEEKS' | 'MONTHS' | null;
       timeZone: string;
       active?: boolean;
+      startDateTime?: string;
+      recurrenceDaysOfWeek?: string[];
+      repeatSubtasks?: boolean;
     }) => {
       const updated = await json<TaskSeries>(`/api/v1/task-series/${seriesId}`, 'PATCH', recurrence);
       updateCachedTaskSeries(updated);
+      invalidateResource('tasks');
       if (updated.statLinked) invalidateResource('stats', 'task');
       return updated;
     },

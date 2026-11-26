@@ -21,6 +21,8 @@ export interface CalendarGridItem {
   occurrenceDate?: string;
   completed?: boolean;
   timeLabel?: string;
+  startMinute?: number;
+  endMinute?: number;
   color?: string;
   calendarColor?: string;
   textColor?: string;

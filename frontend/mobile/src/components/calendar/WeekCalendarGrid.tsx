@@ -47,7 +47,7 @@ function itemLabel(item: CalendarGridItem): string {
   return `${prefix}: ${item.title}${item.timeLabel ? ` at ${item.timeLabel}` : ''}${status}`;
 }
 
-function WeekItem({ item, onPress }: { item: CalendarGridItem; onPress: () => void }) {
+export function CalendarAgendaItem({ item, onPress }: { item: CalendarGridItem; onPress: () => void }) {
   const { colors } = useAppTheme();
   const accent = item.color ?? colors.accent;
   const foreground = item.textColor ?? colors.text;
@@ -140,7 +140,7 @@ export function WeekCalendarGrid({
                 </SilentPressable>
                 {items.length > 0 && (
                   <View style={styles.items}>
-                    {items.map(item => <WeekItem key={item.id} item={item} onPress={() => onItemPress(item)} />)}
+                    {items.map(item => <CalendarAgendaItem key={item.id} item={item} onPress={() => onItemPress(item)} />)}
                   </View>
                 )}
               </View>

@@ -51,6 +51,8 @@ export interface TaskSeries {
   createdAt: string;
   updatedAt: string;
   statLinked?: boolean;
+  recurrenceDaysOfWeek?: string[];
+  repeatSubtasks?: boolean;
 }
 
 export interface TaskInput {

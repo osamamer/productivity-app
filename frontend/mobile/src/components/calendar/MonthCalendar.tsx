@@ -9,6 +9,8 @@ import { CalendarTaskGroupSheet } from '@/components/calendar/CalendarTaskGroupS
 import { calendarColorHex, calendarTextColor } from '@/components/calendar/CalendarControls';
 import { EventComposerSheet } from '@/components/calendar/EventComposerSheet';
 import { MonthCalendarGrid, type CalendarGridItem } from '@/components/calendar/MonthCalendarGrid';
+import { DayCalendarGrid } from './DayCalendarGrid';
+import { dayRange, eventDayMinutes } from '@/lib/dayCalendarLayout';
 import { WeekCalendarGrid } from '@/components/calendar/WeekCalendarGrid';
 import { TaskComposerSheet } from '@/components/tasks/TaskComposerSheet';
 import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
@@ -38,7 +40,7 @@ interface CalendarDisplayPreferences {
   selectedStatIds: string[] | null;
 }
 
-type CalendarViewMode = 'month' | 'week';
+type CalendarViewMode = 'month' | 'week' | 'day';
 
 const DISPLAY_PREFERENCES_KEY = 'mobile.calendar-display-preferences';
 const PRIORITY_OPTIONS = [
@@ -93,7 +95,7 @@ function readPreferences(value: string | null): CalendarDisplayPreferences {
   try {
     const parsed = JSON.parse(value) as Partial<CalendarDisplayPreferences>;
     return {
-      viewMode: parsed.viewMode === 'week' ? 'week' : DEFAULT_DISPLAY_PREFERENCES.viewMode,
+      viewMode: parsed.viewMode === 'week' || parsed.viewMode === 'day' ? parsed.viewMode : DEFAULT_DISPLAY_PREFERENCES.viewMode,
       showTasks: typeof parsed.showTasks === 'boolean' ? parsed.showTasks : DEFAULT_DISPLAY_PREFERENCES.showTasks,
       showStats: typeof parsed.showStats === 'boolean' ? parsed.showStats : DEFAULT_DISPLAY_PREFERENCES.showStats,
       taskStatus: parsed.taskStatus === 'open' || parsed.taskStatus === 'completed' ? parsed.taskStatus : DEFAULT_DISPLAY_PREFERENCES.taskStatus,
@@ -244,7 +246,7 @@ export function MonthCalendar({
   const [statRefreshKey, setStatRefreshKey] = useState(0);
   const month = useMemo(() => monthStart(calendarDate), [calendarDate]);
   const range = useMemo(
-    () => preferences.viewMode === 'week' ? weekRange(calendarDate) : calendarRange(month),
+    () => preferences.viewMode === 'day' ? dayRange(calendarDate) : preferences.viewMode === 'week' ? weekRange(calendarDate) : calendarRange(month),
     [calendarDate, month, preferences.viewMode],
   );
 
@@ -389,7 +391,8 @@ export function MonthCalendar({
             kind: 'calendarEvent',
             occurrenceKey: occurrence.occurrenceKey,
             occurrenceDate: occurrence.occurrenceDate,
-            timeLabel: occurrence.allDay ? undefined : formatCalendarTime(occurrence.start, event.timeZone),
+            timeLabel: occurrence.allDay ? undefined : formatCalendarTime(occurrence.start),
+            ...(!occurrence.allDay ? eventDayMinutes(occurrence.start, occurrence.end, date) : {}),
             color: eventCalendarColor,
             textColor: calendarTextColor(eventCalendarColor),
             eventStatus: occurrence.status,
@@ -422,6 +425,7 @@ export function MonthCalendar({
             date,
             title: group.name,
             kind: 'taskGroup',
+            startMinute: Math.min(...visibleGroupTasks.map(task => { const scheduled = new Date(task.scheduledPerformDateTime); return scheduled.getHours() * 60 + scheduled.getMinutes(); })),
             completed: visibleGroupTasks.length > 0 && visibleGroupTasks.every(groupTask => groupTask.completed),
             color: colors.accent,
             calendarColor: groupCalendarColor ? calendarColorHex(groupCalendarColor, colors.accent) : undefined,
@@ -434,6 +438,8 @@ export function MonthCalendar({
           date,
           title: task.name || 'Untitled task',
           kind: 'task',
+          startMinute: new Date(task.scheduledPerformDateTime).getHours() * 60 + new Date(task.scheduledPerformDateTime).getMinutes(),
+          timeLabel: formatCalendarTime(task.scheduledPerformDateTime),
           completed: task.completed,
           calendarColor: calendarColorHex(calendarsById.get(task.calendarId)?.color, colors.accent),
         });
@@ -547,9 +553,9 @@ export function MonthCalendar({
 
   function changeCalendarPeriod(offset: number) {
     setCalendarDate(current => {
-      if (preferences.viewMode === 'week') {
+      if (preferences.viewMode === 'week' || preferences.viewMode === 'day') {
         const next = new Date(current);
-        next.setDate(next.getDate() + offset * 7);
+        next.setDate(next.getDate() + offset * (preferences.viewMode === 'day' ? 1 : 7));
         return next;
       }
 
@@ -573,9 +579,18 @@ export function MonthCalendar({
         <ChoiceChips
           value={preferences.viewMode}
           onChange={value => updatePreferences(previous => ({ ...previous, viewMode: value }))}
-          options={[{ value: 'week' as const, label: 'Week' }, { value: 'month' as const, label: 'Month' }]} />
+          options={[{ value: 'day' as const, label: 'Day' }, { value: 'week' as const, label: 'Week' }, { value: 'month' as const, label: 'Month' }]} />
       </View>
-      {preferences.viewMode === 'week' ? (
+      {preferences.viewMode === 'day' ? (
+        <DayCalendarGrid
+          date={calendarDate}
+          items={itemsByDate.get(localDate(calendarDate)) ?? []}
+          loading={calendarsLoading || (eventsLoading && tasksLoading)}
+          onDayChange={changeCalendarPeriod}
+          onToday={goToToday}
+          onDayPress={openDay}
+          onItemPress={openItem} />
+      ) : preferences.viewMode === 'week' ? (
         <WeekCalendarGrid
           weekStart={range.start}
           itemsByDate={itemsByDate}

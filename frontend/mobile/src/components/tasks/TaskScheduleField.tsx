@@ -113,10 +113,11 @@ export function TaskDateTimePicker({ value, onChange, timeOnly = false }: {
   );
 }
 
-export function TaskScheduleField({ value, onChange, timeOnly = false, style, disabled = false }: {
+export function TaskScheduleField({ value, onChange, timeOnly = false, style, disabled = false, label }: {
   value: string | null | undefined;
   onChange: (value: string) => void;
   timeOnly?: boolean;
+  label?: string;
   style?: StyleProp<ViewStyle>;
   disabled?: boolean;
 }) {
@@ -146,7 +147,7 @@ export function TaskScheduleField({ value, onChange, timeOnly = false, style, di
   return (
     <View style={[styles.container, style]}>
       <View style={styles.heading}>
-        <AppText variant="label">{timeOnly ? 'Scheduled time' : 'Scheduled'}</AppText>
+        <AppText variant="label">{label ?? (timeOnly ? 'Scheduled time' : 'Scheduled')}</AppText>
         {hasSchedule && !timeOnly && !disabled && (
           <SilentPressable
             accessibilityRole="button"
@@ -161,12 +162,12 @@ export function TaskScheduleField({ value, onChange, timeOnly = false, style, di
       </View>
       <SilentPressable
         accessibilityRole="button"
-        accessibilityLabel={`Scheduled: ${displayedValue}`}
+        accessibilityLabel={`${label ?? 'Scheduled'}: ${displayedValue}`}
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={openPicker}
         style={({ pressed }) => [styles.field, { borderColor: colors.border, backgroundColor: colors.background }, disabled && styles.disabled, pressed && styles.pressed]}>
-        <Ionicons name="calendar-outline" size={19} color={disabled ? colors.textMuted : colors.accent} />
+        <Ionicons name={timeOnly ? "time-outline" : "calendar-outline"} size={19} color={disabled ? colors.textMuted : colors.accent} />
         <AppText variant="label" color={hasSchedule ? 'default' : 'muted'} style={styles.fieldValue}>
           {displayedValue}
         </AppText>
@@ -174,7 +175,7 @@ export function TaskScheduleField({ value, onChange, timeOnly = false, style, di
       </SilentPressable>
       <AppPopup
         visible={open && !disabled}
-        title={timeOnly ? 'Scheduled time' : 'Scheduled'}
+        title={label ?? (timeOnly ? 'Scheduled time' : 'Scheduled')}
         showIcon={false}
         onClose={() => setOpen(false)}
         dismissOnBackdrop={false}

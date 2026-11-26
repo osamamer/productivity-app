@@ -11,7 +11,7 @@ if command -v xdg-user-dir >/dev/null 2>&1; then
 fi
 documents_dir="${documents_dir:-${HOME:?HOME must be set}/Documents}"
 output_dir="${CLARITARD_APK_OUTPUT_DIR:-$documents_dir/productivity-app-apks}"
-apk_name="${CLARITARD_APK_NAME:-claritard-production-$(date +%Y%m%d-%H%M%S).apk}"
+apk_name="${CLARITARD_APK_NAME:-}"
 dry_run=0
 
 usage() {
@@ -68,10 +68,20 @@ fi
 
 # Match CI's versionCode (commit count) so the APK installs over Obtainium builds;
 # Android rejects a lower versionCode as "App not installed".
-export ANDROID_VERSION_CODE="${ANDROID_VERSION_CODE:-$(git -C "$repo_root" rev-list --count HEAD)}"
+commit_count=$(git -C "$repo_root" rev-list --count HEAD)
+# Uncommitted previews need to install over the APK published for the current commit.
+if ! git -C "$repo_root" diff --quiet HEAD -- frontend/mobile frontend/shared; then
+  commit_count=$((commit_count + 1))
+fi
+export ANDROID_VERSION_CODE="${ANDROID_VERSION_CODE:-$commit_count}"
+base_version=$(node -e 'process.stdout.write(require(process.argv[1]).expo.version)' "$mobile_dir/app.json")
+apk_name="${apk_name:-claritard-production-${base_version}-${ANDROID_VERSION_CODE}.apk}"
+export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-21-openjdk-amd64}"
+export GRADLE_OPTS="${GRADLE_OPTS:-} -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2"
+export CMAKE_BUILD_PARALLEL_LEVEL=2
 
 echo "Building the production APK (versionCode $ANDROID_VERSION_CODE)..."
-npm --prefix "$mobile_dir" run build:android:production
+nice -n 10 npm --prefix "$mobile_dir" run build:android:production
 
 if [[ ! -s "$apk_path" ]]; then
   echo "The Gradle build completed but no APK was found at: $apk_path" >&2

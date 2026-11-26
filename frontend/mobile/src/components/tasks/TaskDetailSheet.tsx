@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { taskSeriesTimeUpdate } from '@/lib/taskSeriesTime';
+import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
 import { reportError } from '@/lib/errors';
 import { getCachedTaskDetails } from '@/lib/taskDetailsCache';
 import { TASK_PRIORITY_OPTIONS, taskPriorityColor, taskPriorityValue } from '@/lib/taskPriority';
@@ -32,6 +34,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
 }) {
   const { confirm } = useAppPopup();
   const { colors } = useAppTheme();
+  const { refresh: refreshWorkspace } = useTaskWorkspace();
   const [name, setName] = useState(task?.name ?? '');
   const [scheduledPerformDateTime, setScheduledPerformDateTime] = useState(task?.scheduledPerformDateTime ?? '');
   const [reminderMinutesBefore, setReminderMinutesBefore] = useState<number | null>(task?.reminderMinutesBefore ?? null);
@@ -45,6 +48,8 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletePromptOpen, setDeletePromptOpen] = useState(false);
+  const [series, setSeries] = useState<TaskSeries | null>(() => task ? getCachedTaskDetails(task.taskId)?.taskSeries ?? null : null);
+  const scheduleValueRef = useRef(task?.scheduledPerformDateTime ?? '');
   const [repeat, setRepeat] = useState<TaskRecurrenceFrequency>('NONE');
   const [subtasks, setSubtasks] = useState<Task[]>(() => task && !task.parentId
     ? getCachedTaskDetails(task.taskId)?.subtasks ?? []
@@ -126,6 +131,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     const applySeries = (nextSeries: TaskSeries | null) => {
       if (!nextSeries) return;
       seriesRef.current = nextSeries;
+      setSeries(nextSeries);
       const nextRepeat = nextSeries.active ? nextSeries.recurrenceFrequency : 'NONE';
       repeatRef.current = nextRepeat;
       setRepeat(nextRepeat);
@@ -138,7 +144,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
         if (cancelled) return;
         const nextSeries = details.taskSeries;
         if (!nextSeries) return;
-        seriesRef.current = nextSeries;
         applySeries(nextSeries);
       })
       .catch(cause => {
@@ -153,9 +158,10 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     setSaving(true);
     setError(null);
     try {
+      await recurrenceMutationRef.current;
       const updated = await api.tasks.update(task.taskId, {
         name: name.trim(),
-        scheduledPerformDateTime,
+        scheduledPerformDateTime: scheduleValueRef.current,
         importance: updatePriorityForSeries ? task.importance : importance,
         completed,
         reminderMinutesBefore,
@@ -366,6 +372,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
           if (requestId !== recurrenceRequestIdRef.current) return;
           const stoppedSeries = { ...currentSeries, active: false };
           seriesRef.current = stoppedSeries;
+          setSeries(stoppedSeries);
           onUpdated({ ...task, taskSeriesId: stoppedSeries.seriesId });
           return;
         }
@@ -383,6 +390,7 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
           : await api.tasks.startRecurrence(task.taskId, recurrence);
         if (requestId !== recurrenceRequestIdRef.current) return;
         seriesRef.current = nextSeries;
+        setSeries(nextSeries);
         onUpdated({ ...task, taskSeriesId: nextSeries.seriesId });
       })
       .catch(cause => {
@@ -394,7 +402,39 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
       });
   }
 
+  function changeSeriesTime(value: string) {
+    const currentSeries = seriesRef.current;
+    if (!task || !currentSeries?.active) return;
+    const update = taskSeriesTimeUpdate(currentSeries, value);
+    const requestId = ++recurrenceRequestIdRef.current;
+    setSeries({ ...currentSeries, startDateTime: update.startDateTime });
+    setError(null);
+    recurrenceMutationRef.current = recurrenceMutationRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const saved = await api.tasks.updateRecurrence(currentSeries.seriesId, update);
+        seriesRef.current = saved;
+        if (requestId !== recurrenceRequestIdRef.current) return;
+        setSeries(saved);
+        const updatedTask = await api.tasks.get(task.taskId);
+        if (requestId !== recurrenceRequestIdRef.current) return;
+        if (scheduleValueRef.current === task.scheduledPerformDateTime) {
+          scheduleValueRef.current = updatedTask.scheduledPerformDateTime ?? '';
+          setScheduledPerformDateTime(scheduleValueRef.current);
+        }
+        onUpdated(updatedTask);
+        await refreshWorkspace();
+      })
+      .catch(cause => {
+        if (requestId === recurrenceRequestIdRef.current) {
+          setSeries(seriesRef.current);
+          setError(reportError('Could not change series time', cause));
+        } else console.error('Could not change series time:', cause);
+      });
+  }
+
   function handleScheduledChange(nextScheduledPerformDateTime: string) {
+    scheduleValueRef.current = nextScheduledPerformDateTime;
     setScheduledPerformDateTime(nextScheduledPerformDateTime);
     if (nextScheduledPerformDateTime && repeatRef.current !== 'NONE' && !seriesRef.current) {
       changeRepeat(repeatRef.current, nextScheduledPerformDateTime);
@@ -500,6 +540,12 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
             { value: 'WEEKLY' as const, label: 'Weekly' },
             { value: 'MONTHLY' as const, label: 'Monthly' },
           ]} />
+        </View>
+      )}
+      {series?.active && !task?.parentId && (
+        <View style={{ gap: 8 }}>
+          <TaskScheduleField label="Series time" timeOnly value={series.startDateTime} onChange={changeSeriesTime} />
+          <AppText variant="caption" color="muted">Changes upcoming incomplete occurrences. Past and completed tasks keep their original times.</AppText>
         </View>
       )}
       <TaskReminderField
