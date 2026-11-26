@@ -47,12 +47,31 @@ export function nextDisplayDayBoundary(now: Date, endHour: number): Date {
   return boundary;
 }
 
-export function taskDateBucket(scheduledPerformDateTime: string | null, displayDayKey: string): 'today' | 'future' | 'past' | null {
+/** The date after the display day, whose hours before the day-end hour still belong to it; null when the day ends at midnight. */
+export function displayDayTailDate(displayDayKey: string, endHour: number): string | null {
+  if (dayEndHour(endHour) === 0) return null;
+  const next = new Date(`${displayDayKey}T12:00:00`);
+  next.setDate(next.getDate() + 1);
+  return localDate(next);
+}
+
+/**
+ * Today is the whole display date plus the next date before the day-end hour, so a 02:00 task
+ * shows with the day that is ending and then, once that day ends, on its own date.
+ */
+export function taskDateBucket(
+  scheduledPerformDateTime: string | null,
+  displayDayKey: string,
+  endHour = 0,
+): 'today' | 'future' | 'past' | null {
   if (!scheduledPerformDateTime) return null;
   const scheduled = new Date(scheduledPerformDateTime);
   if (Number.isNaN(scheduled.getTime())) return null;
   const scheduledDate = localDate(scheduled);
   if (scheduledDate === displayDayKey) return 'today';
+  if (scheduledDate === displayDayTailDate(displayDayKey, endHour) && scheduled.getHours() < dayEndHour(endHour)) {
+    return 'today';
+  }
   return scheduledDate > displayDayKey ? 'future' : 'past';
 }
 

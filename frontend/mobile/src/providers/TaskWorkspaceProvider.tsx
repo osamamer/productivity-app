@@ -2,7 +2,7 @@ import { createContext, PropsWithChildren, useCallback, useContext, useEffect, u
 import { AppState } from 'react-native';
 
 import { keepUnchanged } from '../../../shared/keepUnchanged';
-import { displayDayDate, localDate, nextDisplayDayBoundary, taskDateBucket } from '@/lib/date';
+import { displayDayDate, displayDayTailDate, localDate, nextDisplayDayBoundary, taskDateBucket } from '@/lib/date';
 import { reportError } from '@/lib/errors';
 import { animateLayout } from '@/lib/motion';
 import { subscribeToResourceInvalidation } from '@/lib/resourceInvalidation';
@@ -65,13 +65,18 @@ function usableGroups(taskGroups: TaskGroup[], tasks?: Task[]): TaskGroup[] {
 
 type TaskDateUpdate = { task: Task; scheduledPerformDateTime: string };
 
-function orderWithTasksAtEndOfToday(tasks: Task[], movedTaskIds: string[], displayDayKey: string): string[] {
+function orderWithTasksAtEndOfToday(
+  tasks: Task[],
+  movedTaskIds: string[],
+  displayDayKey: string,
+  endHour: number,
+): string[] {
   const movedTaskIdSet = new Set(movedTaskIds);
   const moved = tasks.map(task => task.taskId).filter(taskId => movedTaskIdSet.has(taskId));
   const remaining = tasks.map(task => task.taskId).filter(taskId => !movedTaskIdSet.has(taskId));
   let lastTodayIndex = -1;
   tasks.forEach(task => {
-    if (!movedTaskIdSet.has(task.taskId) && taskDateBucket(task.scheduledPerformDateTime, displayDayKey) === 'today') {
+    if (!movedTaskIdSet.has(task.taskId) && taskDateBucket(task.scheduledPerformDateTime, displayDayKey, endHour) === 'today') {
       lastTodayIndex = remaining.indexOf(task.taskId);
     }
   });
@@ -142,9 +147,12 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       setLoading(true);
       setError(null);
       try {
+        const tailDate = displayDayTailDate(displayDayKey, homeDayEndHour);
         const [today, calendarToday, future, past, futureProbe, pastProbe, undated, taskGroups] = await Promise.all([
           api.tasks.forDate(displayDayKey),
-          displayDayKey === localDate() ? Promise.resolve([] as Task[]) : api.tasks.today(),
+          // The calendar date after midnight, or before midnight the next morning's tasks before the day ends.
+          displayDayKey !== localDate() ? api.tasks.today()
+            : tailDate ? api.tasks.forDate(tailDate) : Promise.resolve([] as Task[]),
           api.tasks.future(TASK_PAGE_BATCH_SIZE, 0, completedFilter),
           api.tasks.past(TASK_PAGE_BATCH_SIZE, 0, completedFilter),
           api.tasks.future(1, TASK_PAGE_BATCH_SIZE, completedFilter),
@@ -183,7 +191,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
     });
     requestRef.current = trackedRequest;
     await trackedRequest;
-  }, [displayDayKey, homeDayEndHourReady, isAuthenticated, showCompletedTasks]);
+  }, [displayDayKey, homeDayEndHour, homeDayEndHourReady, isAuthenticated, showCompletedTasks]);
 
   useEffect(() => {
     loadRef.current = load;
@@ -370,7 +378,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       setAllTasks(previous => previous.map(task => savedById.get(task.taskId) ?? task));
 
       if (taskIdsToAppend.length > 0) {
-        const orderedIds = orderWithTasksAtEndOfToday(allTasks, taskIdsToAppend, displayDayKey);
+        const orderedIds = orderWithTasksAtEndOfToday(allTasks, taskIdsToAppend, displayDayKey, homeDayEndHour);
         const reordered = await api.tasks.reorder(orderedIds);
         const reorderedById = new Map(reordered.map(task => [task.taskId, task]));
         setAllTasks(previous => previous.map(task => reorderedById.get(task.taskId) ?? task));
@@ -380,12 +388,12 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       await load(true);
       throw cause;
     }
-  }, [allTasks, displayDayKey, load]);
+  }, [allTasks, displayDayKey, homeDayEndHour, load]);
 
   const moveTasksToToday = useCallback(async (taskIds: string[]) => {
     const now = new Date();
     const ids = new Set(taskIds);
-    const tasksToMove = allTasks.filter(task => ids.has(task.taskId) && taskDateBucket(task.scheduledPerformDateTime, displayDayKey) === 'past');
+    const tasksToMove = allTasks.filter(task => ids.has(task.taskId) && taskDateBucket(task.scheduledPerformDateTime, displayDayKey, homeDayEndHour) === 'past');
     if (tasksToMove.length === 0) return;
 
     const updates = tasksToMove.map(task => {
@@ -410,13 +418,13 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
     const target = new Date(scheduledPerformDateTime);
     if (Number.isNaN(target.getTime())) throw new Error('Invalid task date');
     const taskIdsToAppend = localDate(target) === displayDayKey
-      ? tasksToMove.filter(task => taskDateBucket(task.scheduledPerformDateTime, displayDayKey) !== 'today').map(task => task.taskId)
+      ? tasksToMove.filter(task => taskDateBucket(task.scheduledPerformDateTime, displayDayKey, homeDayEndHour) !== 'today').map(task => task.taskId)
       : [];
     await persistDateUpdates(
       tasksToMove.map(task => ({ task, scheduledPerformDateTime })),
       taskIdsToAppend,
     );
-  }, [allTasks, displayDayKey, persistDateUpdates]);
+  }, [allTasks, displayDayKey, homeDayEndHour, persistDateUpdates]);
 
   const createGroup = useCallback(async (name: string, taskIds: string[]) => {
     const created = await api.taskGroups.create(name, taskIds);
@@ -452,11 +460,11 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
 
   const value = useMemo(() => {
     const buckets = allTasks.reduce((result, task) => {
-      const bucket = taskDateBucket(task.scheduledPerformDateTime, displayDayKey);
+      const bucket = taskDateBucket(task.scheduledPerformDateTime, displayDayKey, homeDayEndHour);
       if (bucket) result[bucket].push(task);
       return result;
     }, { today: [] as Task[], future: [] as Task[], past: [] as Task[] });
-    const undatedTasks = allTasks.filter(task => taskDateBucket(task.scheduledPerformDateTime, displayDayKey) === null);
+    const undatedTasks = allTasks.filter(task => taskDateBucket(task.scheduledPerformDateTime, displayDayKey, homeDayEndHour) === null);
     return {
       displayDayKey,
       allTasks,
@@ -485,7 +493,7 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
       replaceGroupTasks,
       deleteGroup,
     };
-  }, [addTask, allTasks, createGroup, deleteGroup, displayDayKey, error, groups, hasMoreFutureTasks, hasMorePastTasks, loadMoreFutureTasks, loadMorePastTasks, loading, moveTask, moveTasksToDate, moveTasksToToday, ready, refresh, removeTask, renameGroup, reorderTasks, replaceGroupTasks, updateTask]);
+  }, [addTask, allTasks, createGroup, deleteGroup, displayDayKey, error, homeDayEndHour, groups, hasMoreFutureTasks, hasMorePastTasks, loadMoreFutureTasks, loadMorePastTasks, loading, moveTask, moveTasksToDate, moveTasksToToday, ready, refresh, removeTask, renameGroup, reorderTasks, replaceGroupTasks, updateTask]);
 
   return <TaskWorkspaceContext.Provider value={value}>{children}</TaskWorkspaceContext.Provider>;
 }
