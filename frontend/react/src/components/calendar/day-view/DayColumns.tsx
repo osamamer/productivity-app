@@ -24,6 +24,7 @@ interface DayColumnsProps {
     // Null hides the screen column: a plain browser, or a day that has not happened yet.
     screen: ScreenBlock[] | null;
     // Clicking empty space in the planned column offers to plan a chunk there, from the current hour on.
+    onEditBlock?: (block: PlannedBlock) => void;
     onCreateAt?: (slot: TimeInterval, anchor: { top: number; left: number }) => void;
 }
 
@@ -39,7 +40,7 @@ function ColumnHeader({ children }: { children: string }) {
  * One day top to bottom: what was planned beside what was on screen, an hour every 72px. Place it
  * inside an element marked `data-day-scroller`, which is scrolled to bring "now" into view.
  */
-export function DayColumns({ windowStart, windowEnd, now, planned, did = [], screen, onCreateAt }: DayColumnsProps) {
+export function DayColumns({ windowStart, windowEnd, now, planned, did = [], screen, onCreateAt, onEditBlock }: DayColumnsProps) {
     const theme = useTheme();
     const nowRef = useRef<HTMLDivElement | null>(null);
     const span = windowEnd - windowStart;
@@ -123,7 +124,20 @@ export function DayColumns({ windowStart, windowEnd, now, planned, did = [], scr
                         const blockPx = px(block.widthPct);
                         return (
                             <Tooltip key={block.id} arrow placement="right" title={<PlannedTooltip block={block} />}>
-                                <Box data-planned-block sx={{
+                                <Box data-planned-block
+                                    role={onEditBlock && block.eventId ? 'button' : undefined}
+                                    tabIndex={onEditBlock && block.eventId ? 0 : undefined}
+                                    aria-label={onEditBlock && block.eventId ? `Edit ${block.title}` : undefined}
+                                    onClick={event => { event.stopPropagation(); onEditBlock?.(block); }}
+                                    onKeyDown={event => {
+                                        if (event.key === 'Enter' || event.key === ' ') {
+                                            event.preventDefault();
+                                            onEditBlock?.(block);
+                                        }
+                                    }}
+                                    sx={{
+                                    cursor: onEditBlock && block.eventId ? 'pointer' : undefined,
+                                    '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' },
                                     position: 'absolute',
                                     top: `${block.leftPct}%`,
                                     height: `max(4px, ${block.widthPct}%)`,

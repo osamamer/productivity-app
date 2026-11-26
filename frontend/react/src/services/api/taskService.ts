@@ -453,10 +453,9 @@ export const taskService = {
             if (!response.ok) {
                 throw new Error('Failed to fetch all tasks');
             }
-            const tasks = await response.json() as Task[];
-            persistMainTasks(tasks);
-            return tasks;
+            return await response.json() as Task[];
         });
+        if (mainTasksCache.getCached(key) === tasks) persistMainTasks(tasks);
         return filterDeletedTasks(tasks);
     },
 

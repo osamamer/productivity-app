@@ -311,17 +311,28 @@ public class TaskSeriesService {
         LocalDateTime through = now.plusDays(OCCURRENCE_HORIZON_DAYS);
         List<LocalDateTime> occurrenceDates = TaskRecurrenceCalculator.occurrencesBetween(series, from, through);
         List<Task> newOccurrences = new ArrayList<>();
+        LocalDate today = LocalDate.now(ZoneId.of(series.getTimeZone()));
+        List<Task> existingOccurrences = taskRepository
+                .findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(series.getSeriesId(), userId);
 
         for (LocalDateTime occurrenceDate : occurrenceDates) {
             Optional<Task> existingOccurrence = taskRepository.findByTaskSeriesIdAndSeriesOccurrenceAt(
                     series.getSeriesId(), occurrenceDate);
             if (existingOccurrence.isPresent()) {
                 Task existingTask = existingOccurrence.get();
-                if (existingTask.isSkipped() && existingTask.getSkipReason() != TaskSkipReason.USER) {
+                if (!occurrenceDate.toLocalDate().isBefore(today)
+                        && existingTask.isSkipped() && existingTask.getSkipReason() != TaskSkipReason.USER) {
                     existingTask.setSkipped(false);
                     existingTask.setSkipReason(null);
                     taskRepository.save(existingTask);
                 }
+                continue;
+            }
+            // Time changes keep history at its original time. Reserve those dates,
+            // including completed future occurrences, when expanding the new rule.
+            if (existingOccurrences.stream().anyMatch(task -> task.getSeriesOccurrenceAt() != null
+                    && task.getSeriesOccurrenceAt().toLocalDate().equals(occurrenceDate.toLocalDate())
+                    && (task.isCompleted() || occurrenceDate.toLocalDate().isBefore(today)))) {
                 continue;
             }
             // A user-deleted occurrence remains in the table as a tombstone.

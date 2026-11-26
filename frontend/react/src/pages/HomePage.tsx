@@ -1,4 +1,5 @@
 import React, { ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { keepUnchanged } from '../services/utils/keepUnchanged';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
     Box,
@@ -1205,6 +1206,7 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
     const [bulkDateDraft, setBulkDateDraft] = useState(() => new Date());
     const [cachedGroups] = useState(() => taskGroupService.getCachedGroups());
     const [groups, setGroups] = useState<TaskGroup[] | null>(() => cachedGroups ?? null);
+    const [groupLoadFailed, setGroupLoadFailed] = useState(false);
     const groupsRef = useRef(groups);
     groupsRef.current = groups;
     const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
@@ -1843,12 +1845,17 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
         }, FOCUS_TASK_SLIDE_DURATION_MS);
     }, []);
 
+    const groupRefreshVersion = useRef(0);
     const refreshGroups = useCallback(async (forceRefresh = false) => {
+        const version = ++groupRefreshVersion.current;
         try {
             const fetchedGroups = await taskGroupService.getGroups(forceRefresh);
+            if (version !== groupRefreshVersion.current) return;
             const previousGroups = groupsRef.current ?? [];
-            groupsRef.current = fetchedGroups;
-            setGroups(fetchedGroups);
+            const nextGroups = keepUnchanged(previousGroups, fetchedGroups);
+            groupsRef.current = nextGroups;
+            setGroups(nextGroups);
+            setGroupLoadFailed(false);
             setCollapsedGroupIds(previous => reconcileCollapsedHomeGroupIds(
                 previous,
                 previousGroups,
@@ -1856,27 +1863,14 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
             ));
         } catch (err) {
             console.error('Error fetching task groups:', err);
-            if (!forceRefresh) {
-                setGroups([]);
-                groupsRef.current = [];
-            }
+            if (version === groupRefreshVersion.current) setGroupLoadFailed(true);
         }
     }, []);
 
     useEffect(() => {
-        void refreshGroups();
-    }, [refreshGroups]);
-
-    useEffect(() => {
-        let refreshing = false;
         const syncGroups = async () => {
-            if (refreshing || document.visibilityState !== 'visible' || !navigator.onLine) return;
-            refreshing = true;
-            try {
-                await refreshGroups(true);
-            } finally {
-                refreshing = false;
-            }
+            if (document.visibilityState !== 'visible' || !navigator.onLine) return;
+            await refreshGroups(true);
         };
         // The shared heartbeat already skips hidden or offline windows.
         return subscribeToAppRefresh(() => void syncGroups());
@@ -4929,7 +4923,11 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
                         </Box>
                     ) : homeContentReady ? (
                         <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-                            <CircularProgress size={20} aria-label="Loading task groups" />
+                            {groupLoadFailed ? (
+                                <Alert severity="warning" action={<Button onClick={() => void refreshGroups(true)}>Retry</Button>}>
+                                    Could not load task groups.
+                                </Alert>
+                            ) : <CircularProgress size={20} aria-label="Loading task groups" />}
                         </Box>
                     ) : null}
 

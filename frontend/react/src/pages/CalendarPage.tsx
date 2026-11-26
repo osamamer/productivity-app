@@ -308,6 +308,7 @@ export function CalendarPage() {
     const handleUpdateEvent = async (eventId: string, input: CalendarEventInput) => {
         const updated = await eventService.updateEvent(eventId, input);
         setEvents(current => current.map(event => event.id === eventId ? updated : event));
+        return updated;
     };
 
     const handleUpdateImportedEventReminder = (
@@ -570,7 +571,7 @@ export function CalendarPage() {
             }}>
                 {calendarSettingsError && <Alert severity="error" sx={{ mb: 1 }}>{calendarSettingsError}</Alert>}
                 {dayViewDate ? (
-                    <CalendarDayView date={dayViewDate} onChangeDate={date => setSearchParams({ day: date }, { replace: true })} onShowGrid={showGrid} onCreateEvent={handleCreateEvent} />
+                    <CalendarDayView date={dayViewDate} onChangeDate={date => setSearchParams({ day: date }, { replace: true })} onShowGrid={showGrid} onCreateEvent={handleCreateEvent} calendars={calendars} onUpdateEvent={handleUpdateEvent} onDeleteEvent={handleDeleteEvent} />
                 ) : (
                 <MonthCalendar
                     tasks={allTasks}
@@ -596,7 +597,7 @@ export function CalendarPage() {
                     onDeleteTaskFutureOccurrences={handleDeleteTaskFutureOccurrences}
                     onUpdateTask={handleUpdateTask}
                     onCreateEvent={async input => { await handleCreateEvent(input); }}
-                    onUpdateEvent={handleUpdateEvent}
+                    onUpdateEvent={async (id, input) => { await handleUpdateEvent(id, input); }}
                     onUpdateImportedEventReminder={handleUpdateImportedEventReminder}
                     onMoveEventOccurrence={handleMoveEventOccurrence}
                     onDeleteEvent={handleDeleteEvent}

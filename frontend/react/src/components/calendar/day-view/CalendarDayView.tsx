@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Alert, Box, Button, ButtonGroup, Card, Divider, IconButton, Skeleton, Stack, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, ButtonGroup, Card, Dialog, DialogContent, DialogTitle, Divider, IconButton, Skeleton, Stack, Tooltip, Typography } from '@mui/material';
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import { addDays, format, isToday, parseISO } from 'date-fns';
 import { Link as RouterLink } from 'react-router-dom';
 import { useDayOverview } from '../../../hooks/useDayOverview';
-import { buildPlannedLane, buildScreenLane } from '../../day/dayTimelineLayout';
+import { buildPlannedLane, buildScreenLane, type PlannedBlock } from '../../day/dayTimelineLayout';
 import { plannedItems } from '../../day/plannedItems';
 import { didItems } from '../../day/didItems';
 import { useActivityTimer } from '../../../hooks/useActivityTimer';
@@ -20,12 +20,18 @@ import { useActivities } from '../../../hooks/useActivities';
 import { ActivitySuggestions } from '../../activity/ActivitySuggestions';
 import { CalendarEvent, CalendarEventInput } from '../../../types/CalendarEvent';
 
+import { CalendarEventForm } from '../CalendarEventForm';
+import type { Calendar } from '../../../types/Calendar';
+
 export type CalendarGridView = 'dayGridWeek' | 'dayGridMonth';
 
 interface CalendarDayViewProps {
     date: string;
     onChangeDate: (date: string) => void;
     onShowGrid: (view: CalendarGridView) => void;
+    calendars: Calendar[];
+    onUpdateEvent: (id: string, input: CalendarEventInput) => Promise<CalendarEvent>;
+    onDeleteEvent: (id: string) => Promise<void>;
     onCreateEvent: (input: CalendarEventInput) => Promise<CalendarEvent>;
 }
 
@@ -34,11 +40,13 @@ function shiftDate(date: string, days: number) {
 }
 
 /** The calendar's day view: a tall timeline of the plan beside screen time, with totals alongside. */
-export function CalendarDayView({ date, onChangeDate, onShowGrid, onCreateEvent }: CalendarDayViewProps) {
+export function CalendarDayView({ date, onChangeDate, onShowGrid, onCreateEvent, calendars, onUpdateEvent, onDeleteEvent }: CalendarDayViewProps) {
     const { overview, error, mutate } = useDayOverview(date);
     const activities = useActivities();
     // A timer started elsewhere shows up in the Did lane before the overview refetches.
     const { current: runningTimer } = useActivityTimer();
+    const [selection, setSelection] = useState<PlannedBlock | null>(null);
+    const selectedEvent = overview?.events.find(event => event.id === selection?.eventId);
     const [draft, setDraft] = useState<ChunkDraft | null>(null);
     const createChunk = async (input: CalendarEventInput) => {
         const created = await onCreateEvent(input);
@@ -99,6 +107,7 @@ export function CalendarDayView({ date, onChangeDate, onShowGrid, onCreateEvent 
                             planned={layout.planned}
                             did={layout.did}
                             screen={screenOn && dayStarted ? layout.screen.blocks : null}
+                            onEditBlock={setSelection}
                             onCreateAt={(slot, anchor) => setDraft({ ...slot, anchor })}
                         />
                     )}
@@ -157,6 +166,35 @@ export function CalendarDayView({ date, onChangeDate, onShowGrid, onCreateEvent 
                     )}
                 </Stack>
             </Box>
+            <Dialog open={Boolean(selectedEvent)} onClose={() => setSelection(null)} fullWidth maxWidth="sm">
+                <DialogTitle>{selectedEvent?.title}</DialogTitle>
+                <DialogContent>
+                    {selectedEvent?.sourceId ? (
+                        <Alert severity="info">Imported event details are read-only.</Alert>
+                    ) : selectedEvent && (
+                        <CalendarEventForm
+                            key={`${selectedEvent.id}:${selection?.occurrenceKey}`}
+                            initialDate={date}
+                            event={selectedEvent}
+                            calendars={calendars}
+                            visibleCalendars={calendars.filter(calendar => calendar.visible)}
+                            occurrenceKey={selection?.occurrenceKey}
+                            occurrenceDate={selection?.occurrenceDate}
+                            onCancel={() => setSelection(null)}
+                            onSave={async input => {
+                                const updated = await onUpdateEvent(selectedEvent.id, input);
+                                mutate(current => ({ ...current, events: current.events.map(event => event.id === updated.id ? updated : event) }));
+                                setSelection(null);
+                            }}
+                            onDelete={async () => {
+                                await onDeleteEvent(selectedEvent.id);
+                                mutate(current => ({ ...current, events: current.events.filter(event => event.id !== selectedEvent.id) }));
+                                setSelection(null);
+                            }}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
             <QuickChunkPopover draft={draft} activities={activities ?? []} onClose={() => setDraft(null)} onCreate={createChunk} />
         </Stack>
     );

@@ -1,3 +1,4 @@
+import keycloak, { refreshAuthToken, isDefinitiveRefreshFailure, redirectToSignIn } from '../keycloak';
 import { reportServerAvailability } from '../backup/backupAvailability';
 
 export const API_READ_RETRY_WINDOW_MS = 3_000;
@@ -45,6 +46,20 @@ async function discardResponse(response: Response): Promise<void> {
 export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
     const request = typeof Request !== 'undefined' && input instanceof Request ? input : undefined;
     const method = (init.method ?? request?.method ?? 'GET').toUpperCase();
+    const headers = new Headers(init.headers ?? request?.headers);
+    if (headers.has('Authorization')) {
+        try {
+            await refreshAuthToken(30);
+        } catch (error) {
+            if (isDefinitiveRefreshFailure(error)) {
+                redirectToSignIn();
+                throw error;
+            }
+            console.warn('Could not refresh the API session; continuing with the current token', error);
+        }
+        if (keycloak.token) headers.set('Authorization', `Bearer ${keycloak.token}`);
+        init = { ...init, headers };
+    }
     if (method !== 'GET') return fetch(input, init);
 
     const callerSignal = init.signal ?? request?.signal;

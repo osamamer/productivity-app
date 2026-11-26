@@ -35,6 +35,7 @@ function start(): void {
     timer = window.setInterval(tick, INTERVAL_MS);
     window.addEventListener('focus', tickOnReturn);
     window.addEventListener('online', tickOnReturn);
+    window.addEventListener('pageshow', tickOnReturn);
     document.addEventListener('visibilitychange', onVisibilityChange);
 }
 
@@ -43,6 +44,7 @@ function stop(): void {
     timer = undefined;
     window.removeEventListener('focus', tickOnReturn);
     window.removeEventListener('online', tickOnReturn);
+    window.removeEventListener('pageshow', tickOnReturn);
     document.removeEventListener('visibilitychange', onVisibilityChange);
 }
 
@@ -50,6 +52,10 @@ function stop(): void {
 export function subscribeToAppRefresh(listener: Listener): () => void {
     if (listeners.size === 0) start();
     listeners.add(listener);
+    // Validate kept snapshots on mount as well as on return from suspend.
+    queueMicrotask(() => {
+        if (listeners.has(listener) && canRefresh()) listener();
+    });
     return () => {
         listeners.delete(listener);
         if (listeners.size === 0) stop();
