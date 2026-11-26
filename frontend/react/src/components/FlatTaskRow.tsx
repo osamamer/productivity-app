@@ -1580,6 +1580,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                     size="small"
                     checked={task.completed}
                     disabled={readOnly}
+                    inputProps={{ 'aria-label': `Complete task ${task.name}` }}
                     onClick={event => event.stopPropagation()}
                     onChange={event => onToggle(task.taskId, event.currentTarget.parentElement ?? event.currentTarget)}
                     sx={{ color: cbColor, '&.Mui-checked': { color: cbColor }, mr: 0.5 }}
@@ -2279,6 +2280,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                     <Checkbox
                                         size="small"
                                         checked={subtask.completed}
+                                        inputProps={{ 'aria-label': `Complete subtask ${subtask.name}` }}
                                         onClick={event => event.stopPropagation()}
                                         onChange={() => void handleSubtaskToggle(subtask)}
                                         sx={{ p: 0.75, mr: 1 }}

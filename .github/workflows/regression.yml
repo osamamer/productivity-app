@@ -48,6 +48,9 @@ jobs:
       - name: Run web regressions
         working-directory: frontend/react
         run: npm run test:regression
+      - name: Run web component tests
+        working-directory: frontend/react
+        run: npm test
 
   mobile:
     name: Mobile regression tests
