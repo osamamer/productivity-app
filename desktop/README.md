@@ -125,7 +125,8 @@ computer, in local and cloud mode alike. It replaces the separate App Timeout to
   systemd user timer is armed as a backstop, so the limit holds even if Claritard quits.
 - **Firefox site timers.** The **Claritard URL Gate** extension (`firefox-extension/`) sends timed
   sites to a countdown page. Opening one starts a Firefox session; every timed site opened in it
-  shares that deadline, which survives closing Firefox or the last timed tab. The countdown
+  shares that deadline, which survives closing Firefox or the last timed tab. A site opened into a
+  running session gets no more than its own timer, so a shorter one brings the deadline forward. The countdown
   window hides when no timed tab is open and returns when one reopens. At the deadline the timer
   still closes Firefox. Tab visibility requires URL Gate 1.1.2 or later.
   Setup: Boundaries → **Connect** (installs the native messaging host), then load the extension
@@ -173,7 +174,7 @@ Countdown windows and the gate page use the colors of the web app's current them
 
 Limitations, as with App Timeout: apps that are already running, started from a terminal, or
 opened by another app through D-Bus skip the pause; launchers that run a shell script cannot be
-tracked; and Wayland compositors decide where the "closes in" window appears.
+tracked, except one-line `exec <program> "$@"` wrappers, which are followed to the program; and Wayland compositors decide where the "closes in" window appears.
 
 **Launchers heal themselves.** While Claritard runs it re-checks the wrapped launchers at start,
 whenever `~/.local/share/applications` changes, and every minute (`Launchers.repair`). A launcher

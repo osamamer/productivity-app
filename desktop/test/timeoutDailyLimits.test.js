@@ -90,6 +90,26 @@ test('opening a limited site in a running session brings the session deadline fo
     assert.deepEqual(session.rules, ['https://news.com/', URL]);
 });
 
+test('opening a site in a running session gives it no more than its own timer', () => {
+    const { paths } = tempPaths();
+    fakeFirefox(paths);
+    const now = Date.now() / 1000;
+    writeSession(paths, { id: 'abc', startedAt: now, deadline: now + 7200, name: 'x', rules: ['https://news.com/'], target: { executable: '/nonexistent' } });
+    const { session, shortened } = grantBrowserRule(paths, URL, { ...siteRule, dailyLimitSeconds: 0, closeAfterSeconds: 900 });
+    assert.equal(shortened, true);
+    assert.ok(Math.abs(session.deadline - (now + 900)) < 2, 'the 15 minutes of its timer, not the two hours left in the session');
+});
+
+test('opening a site with a longer timer in a running session keeps the earlier deadline', () => {
+    const { paths } = tempPaths();
+    fakeFirefox(paths);
+    const now = Date.now() / 1000;
+    writeSession(paths, { id: 'abc', startedAt: now, deadline: now + 300, name: 'x', rules: ['https://news.com/'], target: { executable: '/nonexistent' } });
+    const { session, shortened } = grantBrowserRule(paths, URL, { ...siteRule, dailyLimitSeconds: 0, closeAfterSeconds: 3600 });
+    assert.equal(shortened, false);
+    assert.ok(Math.abs(session.deadline - (now + 300)) < 2);
+});
+
 test('time in a Firefox session counts toward the site from when it was opened, and is kept when the session ends', async () => {
     const { paths } = tempPaths();
     const now = Date.now() / 1000;

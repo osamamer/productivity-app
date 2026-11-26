@@ -22,6 +22,29 @@ test('a launcher for a light profile targets that profile of the binary', () => 
     assert.deepEqual(appTarget(launcher('/bin/true %U')), { executable: fs.realpathSync('/bin/true') });
 });
 
+test('a launcher that runs a one-line exec wrapper targets the program the wrapper runs', t => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claritard-wrapper-'));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const program = path.join(dir, 'ChatGPT');
+    fs.copyFileSync('/bin/true', program);
+    fs.chmodSync(program, 0o755);
+    const wrapper = path.join(dir, 'codex-launcher');
+    fs.writeFileSync(wrapper, '#!/bin/sh\nexec "$(dirname "$(readlink -f "$0")")/ChatGPT" "$@"\n', { mode: 0o755 });
+    const link = path.join(dir, 'chatgpt');
+    fs.symlinkSync(wrapper, link);
+
+    assert.deepEqual(appTarget(launcher(`${link} %U`)), { executable: fs.realpathSync(program) });
+});
+
+test('a shell script that does more than exec another program stays the target', t => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claritard-wrapper-'));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const script = path.join(dir, 'start');
+    fs.writeFileSync(script, '#!/bin/sh\ncd /tmp\nexec /bin/true "$@"\n', { mode: 0o755 });
+
+    assert.deepEqual(appTarget(launcher(`${script} %U`)), { executable: fs.realpathSync(script) });
+});
+
 test('processes of one profile are never counted as another profile or the default app', async t => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claritard-profiles-'));
     const script = path.join(dir, 'player.js');

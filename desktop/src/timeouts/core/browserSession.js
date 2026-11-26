@@ -9,7 +9,8 @@ const { readDailyUsage, addDailyUsage, startOfLocalDay, remainingSeconds } = req
 /**
  * One Firefox session opened through a URL timer:
  * `{ id, startedAt, deadline, name, rules, grants: {url: grantedAt}, target }`.
- * Times are epoch seconds. Every timed URL granted during the session shares its deadline,
+ * Times are epoch seconds. Every timed URL granted during the session shares its deadline (the
+ * strictest one: a site opened later can bring it forward),
  * and the file outlives Firefox, so closing and reopening Firefox does not reset the time.
  * A URL's time counts toward its daily limit from its grant until the session's deadline.
  */
@@ -78,7 +79,8 @@ function dailyLimitReached(url) {
 
 /**
  * Unlocks `url` for the current Firefox session, starting one with the rule's duration if none
- * is running. A daily limit can bring the session's deadline forward. Returns
+ * is running. Joining a running session never gives a site more than its own timer or what is
+ * left of its daily limit, so either can bring the session's deadline forward. Returns
  * `{ session, created, shortened }`.
  */
 function grantBrowserRule(paths, url, rule) {
@@ -94,8 +96,9 @@ function grantBrowserRule(paths, url, rule) {
         if (session) {
             session.rules.push(url);
             session.grants = { ...session.grants, [url]: now };
-            const shortened = now + left < session.deadline;
-            if (shortened) session.deadline = now + left;
+            const end = now + Math.min(rule.closeAfterSeconds, left);
+            const shortened = end < session.deadline;
+            if (shortened) session.deadline = end;
             writeSession(paths, session);
             return { session, created: false, shortened };
         }
