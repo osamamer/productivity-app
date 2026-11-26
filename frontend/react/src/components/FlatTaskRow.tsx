@@ -41,7 +41,7 @@ import { StompSubscription } from '@stomp/stompjs';
 import { PomodoroAdjustmentConflictError, taskService } from '../services/api';
 import { Task } from '../types/Task';
 import { TaskSeries } from '../types/TaskSeries';
-import { defaultTaskRecurrence, TaskRecurrenceDraft } from '../types/TaskRecurrence';
+import { TaskRecurrenceDraft } from '../types/TaskRecurrence';
 import { PomodoroStatus } from '../types/PomodoroStatus';
 import { requestSystemNotificationPermission } from '../services/systemNotifications';
 import { playAudioFeedback } from '../services/audioFeedback';
@@ -88,6 +88,7 @@ import {
 import { getPomodoroProgressPercentage } from '../services/utils/pomodoroProgress';
 import { TaskOriginAdornment } from './task/TaskOriginAdornment';
 import type { TaskOriginKind } from './task/TaskOriginUtils';
+import { recurrenceDraftFromSeries } from '../services/utils/taskRecurrenceDraft';
 
 // ─── types ─────────────────────────────────────────────────────────────────
 
@@ -259,17 +260,6 @@ function formatTaskDateTime(date: Date | null): string {
     const pad = (value: number) => String(value).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
         + `T${pad(date.getHours())}:${pad(date.getMinutes())}:00`;
-}
-
-function recurrenceDraftFromSeries(series: TaskSeries | null | undefined): TaskRecurrenceDraft {
-    if (!series?.active) return defaultTaskRecurrence();
-    return {
-        recurrenceFrequency: series.recurrenceFrequency,
-        recurrenceEndDate: series.recurrenceEndDate,
-        recurrenceInterval: series.recurrenceInterval,
-        recurrenceUnit: series.recurrenceUnit,
-        timeZone: series.timeZone,
-    };
 }
 
 function isEditableDragOrigin(target: EventTarget | null): boolean {

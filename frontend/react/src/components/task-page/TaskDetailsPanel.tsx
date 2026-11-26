@@ -45,6 +45,7 @@ import {
     setCachedTaskDetails,
     updateCachedTaskDetails,
 } from '../../services/cache/taskDetailsCache';
+import { recurrenceDraftFromSeries } from '../../services/utils/taskRecurrenceDraft';
 
 type TaskDetailsPanelProps = {
     task: Task;
@@ -155,17 +156,6 @@ function getPriorityLabel(importance: number): string {
     if (importance > 7) return 'High';
     if (importance > 4) return 'Medium';
     return 'Low';
-}
-
-function recurrenceDraftFromSeries(series: TaskSeries | null | undefined): TaskRecurrenceDraft {
-    if (!series?.active) return defaultTaskRecurrence();
-    return {
-        recurrenceFrequency: series.recurrenceFrequency,
-        recurrenceEndDate: series.recurrenceEndDate,
-        recurrenceInterval: series.recurrenceInterval,
-        recurrenceUnit: series.recurrenceUnit,
-        timeZone: series.timeZone,
-    };
 }
 
 function formatFocusTime(seconds: number): string {

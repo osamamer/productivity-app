@@ -12,15 +12,23 @@ import interactionPlugin, { DateClickArg, Draggable, DropArg } from "@fullcalend
 import FullCalendar from "@fullcalendar/react";
 import React, { useMemo, useState, useCallback, useRef } from "react";
 import { createPortal } from 'react-dom';
-import { keyframes } from '@mui/system';
 import { alpha } from '@mui/material/styles';
 import { Task, TaskUpdate } from "../types/Task.tsx";
 import { useTheme } from "@mui/material";
-import { DayCellContentArg, DayCellMountArg, DatesSetArg, EventApi, EventClickArg, EventContentArg, EventDropArg, EventMountArg, MoreLinkMountArg } from '@fullcalendar/core';
+import {
+    DayCellContentArg,
+    DayCellMountArg,
+    DatesSetArg,
+    EventApi,
+    EventClickArg,
+    EventContentArg,
+    EventDropArg,
+    EventMountArg,
+    MoreLinkMountArg,
+} from '@fullcalendar/core';
 import { TaskToCreate } from "../types/TaskToCreate.tsx";
 import { TaskGroup } from "../types/TaskGroup.ts";
 import { StatDefinition, StatEntry } from "../types/Stats.ts";
-import { formatDurationValue, formatTimeValue } from "../services/utils/statValues.ts";
 import { DateStatCheckIn } from "./stats/DateStatCheckIn.tsx";
 import { statService } from "../services/api/statService.ts";
 import { addDays, addMonths, differenceInCalendarDays, format, isAfter, startOfDay, startOfMonth, subDays } from "date-fns";
@@ -69,10 +77,35 @@ import { CalendarChipSelect } from './calendar/CalendarSelect';
 import { useActivities } from '../hooks/useActivities';
 import { activityHex } from './activity/activityColors';
 import { plannedTimeBorder, plannedTimeFill, type PlannedTimeKind } from './day/timelineStyles';
-import { isCalendarDailyTaskVisible, isCalendarStatTaskVisible } from '../services/utils/calendarStatTaskVisibility';
+import {
+    isCalendarDailyTaskVisible,
+    isCalendarStatTaskVisible,
+} from '../services/utils/calendarStatTaskVisibility';
 import { includeDirectStatChildren } from '../services/utils/statDefinitionHierarchy';
-import { statNumericValueLabel } from './stats/statVisualization';
+import { recurrenceDraftFromSeries, recurrenceDraftsEqual } from '../services/utils/taskRecurrenceDraft';
 
+import {
+    readCalendarDisplayPreferences,
+    writeCalendarDisplayPreferences,
+    type CalendarDisplayPreferences,
+    type CalendarDisplaySettings,
+    type CalendarDisplayView,
+    type TaskStatusFilter,
+} from './calendar/calendarDisplayPreferences';
+import { expandDayReveal } from './calendar/monthCalendarMotion';
+import {
+    PRIORITY_OPTIONS,
+    calendarEventInputWithMove,
+    calendarEventMoveInput,
+    calendarEventTextColor,
+    calendarEventTimeLabel,
+    importedEventReminderStart,
+    isImportedEventPast,
+    priorityBucket,
+    statEventValue,
+    taskDateTimeOnDate,
+} from './calendar/monthCalendarItems';
+import { CalendarLoadingState } from './calendar/CalendarLoadingState';
 type MonthCalenderProps = {
     tasks: Task[],
     groups: TaskGroup[],
@@ -116,294 +149,6 @@ type MonthCalenderProps = {
     initialDate?: string,
 }
 
-type TaskStatusFilter = 'all' | 'open' | 'completed';
-
-const CALENDAR_DISPLAY_PREFERENCES_KEY = 'calendar-display-preferences';
-type CalendarDisplayView = 'month' | 'week';
-
-const expandDayReveal = keyframes`
-    from { clip-path: inset(0 0 100% 0); opacity: 0.7; }
-    to { clip-path: inset(0 0 0 0); opacity: 1; }
-`;
-
-type CalendarDisplaySettings = {
-    showTasks: boolean;
-    showStatTasks: boolean;
-    showDailyRecurringTasks: boolean;
-    showStats: boolean;
-    showChunks: boolean;
-    taskStatus: TaskStatusFilter;
-    priorityFilters: number[];
-    selectedStatIds: string[] | null;
-};
-
-type CalendarDisplayPreferences = Record<CalendarDisplayView, CalendarDisplaySettings>;
-
-const DEFAULT_CALENDAR_DISPLAY_SETTINGS: CalendarDisplaySettings = {
-    showTasks: true,
-    showStatTasks: true,
-    showDailyRecurringTasks: true,
-    showStats: true,
-    showChunks: true,
-    taskStatus: 'open',
-    priorityFilters: [3, 6, 9],
-    selectedStatIds: null,
-};
-
-function defaultCalendarDisplayPreferences(): CalendarDisplayPreferences {
-    return {
-        month: {
-            ...DEFAULT_CALENDAR_DISPLAY_SETTINGS,
-            priorityFilters: [...DEFAULT_CALENDAR_DISPLAY_SETTINGS.priorityFilters],
-        },
-        week: {
-            ...DEFAULT_CALENDAR_DISPLAY_SETTINGS,
-            priorityFilters: [...DEFAULT_CALENDAR_DISPLAY_SETTINGS.priorityFilters],
-        },
-    };
-}
-
-function normalizeCalendarDisplaySettings(value: unknown): CalendarDisplaySettings {
-    const parsed = value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Partial<CalendarDisplaySettings>
-        : {};
-
-    return {
-        showTasks: typeof parsed.showTasks === 'boolean'
-            ? parsed.showTasks
-            : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showTasks,
-        showStatTasks: typeof parsed.showStatTasks === 'boolean'
-            ? parsed.showStatTasks
-            : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showStatTasks,
-        showDailyRecurringTasks: typeof parsed.showDailyRecurringTasks === 'boolean'
-            ? parsed.showDailyRecurringTasks
-            : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showDailyRecurringTasks,
-        showStats: typeof parsed.showStats === 'boolean'
-            ? parsed.showStats
-            : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showStats,
-        showChunks: typeof parsed.showChunks === 'boolean'
-            ? parsed.showChunks
-            : DEFAULT_CALENDAR_DISPLAY_SETTINGS.showChunks,
-        taskStatus: parsed.taskStatus === 'open' || parsed.taskStatus === 'completed'
-            ? parsed.taskStatus
-            : DEFAULT_CALENDAR_DISPLAY_SETTINGS.taskStatus,
-        priorityFilters: Array.isArray(parsed.priorityFilters)
-            ? parsed.priorityFilters.filter(value => PRIORITY_OPTIONS.some(option => option.value === value))
-            : [...DEFAULT_CALENDAR_DISPLAY_SETTINGS.priorityFilters],
-        selectedStatIds: Array.isArray(parsed.selectedStatIds)
-            ? parsed.selectedStatIds.filter((id): id is string => typeof id === 'string')
-            : DEFAULT_CALENDAR_DISPLAY_SETTINGS.selectedStatIds,
-    };
-}
-
-function readCalendarDisplayPreferences(): CalendarDisplayPreferences {
-    const defaults = defaultCalendarDisplayPreferences();
-    if (typeof window === 'undefined') return defaults;
-
-    try {
-        const stored = window.localStorage.getItem(CALENDAR_DISPLAY_PREFERENCES_KEY);
-        if (!stored) return defaults;
-
-        const parsed = JSON.parse(stored) as unknown;
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return defaults;
-
-        const storedPreferences = parsed as Partial<Record<CalendarDisplayView, unknown>> & Partial<CalendarDisplaySettings>;
-        const hasPerViewPreferences = storedPreferences.month !== undefined || storedPreferences.week !== undefined;
-        if (!hasPerViewPreferences) {
-            // Keep existing month settings when upgrading from the original flat preference shape.
-            return {
-                month: normalizeCalendarDisplaySettings(parsed),
-                week: defaults.week,
-            };
-        }
-
-        return {
-            month: normalizeCalendarDisplaySettings(storedPreferences.month),
-            week: normalizeCalendarDisplaySettings(storedPreferences.week),
-        };
-    } catch {
-        return defaults;
-    }
-}
-
-function writeCalendarDisplayPreferences(preferences: CalendarDisplayPreferences): void {
-    if (typeof window === 'undefined') return;
-
-    try {
-        window.localStorage.setItem(CALENDAR_DISPLAY_PREFERENCES_KEY, JSON.stringify(preferences));
-    } catch {
-        // Preferences are optional; private browsing may make storage unavailable.
-    }
-}
-
-const PRIORITY_OPTIONS = [
-    { label: 'Low', value: 3, color: '#1976d2' },
-    { label: 'Medium', value: 6, color: '#eab308' },
-    { label: 'High', value: 9, color: '#ef4444' },
-];
-
-function priorityBucket(importance: number): number {
-    if (importance > 7) return 9;
-    if (importance > 4) return 6;
-    return 3;
-}
-
-function calendarEventTextColor(hexColor: string): string {
-    const normalized = hexColor.replace('#', '');
-    if (!/^[0-9a-f]{6}$/i.test(normalized)) return '#ffffff';
-    const channels = [0, 2, 4].map(offset => parseInt(normalized.slice(offset, offset + 2), 16) / 255);
-    const linear = channels.map(channel => channel <= 0.04045
-        ? channel / 12.92
-        : ((channel + 0.055) / 1.055) ** 2.4);
-    const luminance = linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
-    const whiteContrast = 1.05 / (luminance + 0.05);
-    const darkContrast = (luminance + 0.05) / (0.014 + 0.05);
-    return darkContrast > whiteContrast ? '#18202a' : '#ffffff';
-}
-
-function statEventValue(definition: StatDefinition, value: number, status?: StatEntry['status']): string {
-    if (status === 'NOT_PLANNED') return 'Not planned';
-    if (definition.type === 'BOOLEAN') return value === 1 ? 'Yes' : 'No';
-    if (definition.type === 'TIME') return formatTimeValue(value);
-    if (definition.type === 'DURATION') return formatDurationValue(value);
-    return statNumericValueLabel(value, definition.type === 'NUMBER' ? definition.unit : null);
-}
-
-function calendarEventTimeLabel(start: Date | null): string {
-    if (!start) return '';
-    return format(start, start.getMinutes() === 0 ? 'h a' : 'h:mm a');
-}
-
-function taskDateTimeOnDate(scheduledDateTime: string, date: Date): string | null {
-    const time = /T(\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?)/.exec(scheduledDateTime)?.[1];
-    if (!time || Number.isNaN(date.getTime())) return null;
-
-    return `${format(date, 'yyyy-MM-dd')}T${time.length === 5 ? `${time}:00` : time}`;
-}
-
-function calendarEventMoveInput(
-    allDay: boolean,
-    start: Date | null,
-    end: Date | null,
-): CalendarEventOccurrenceMoveInput | null {
-    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
-
-    if (allDay) {
-        return {
-            startDate: format(start, 'yyyy-MM-dd'),
-            endDate: format(subDays(end, 1), 'yyyy-MM-dd'),
-            startTime: null,
-            endTime: null,
-        };
-    }
-
-    return {
-        startDate: null,
-        endDate: null,
-        startTime: start.toISOString(),
-        endTime: end.toISOString(),
-    };
-}
-
-function calendarEventInputWithMove(
-    event: CalendarEvent,
-    move: CalendarEventOccurrenceMoveInput,
-): CalendarEventInput {
-    return {
-        title: event.title,
-        description: event.description,
-        allDay: event.allDay,
-        ...move,
-        timeZone: event.timeZone,
-        status: event.status,
-        recurrenceFrequency: event.recurrenceFrequency,
-        recurrenceEndDate: event.recurrenceEndDate,
-        recurrenceInterval: event.recurrenceInterval,
-        recurrenceUnit: event.recurrenceUnit,
-        reminderMinutesBefore: event.reminderMinutesBefore,
-    };
-}
-
-function importedEventReminderStart(event: CalendarEvent): string | null {
-    if (!event.allDay) return event.startTime;
-    if (!event.startDate) return null;
-
-    const [year, month, day] = event.startDate.split('-').map(Number);
-    const localMidnightAsUtc = Date.UTC(year, month - 1, day);
-    try {
-        const formatter = new Intl.DateTimeFormat('en-US', {
-            timeZone: event.timeZone,
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hourCycle: 'h23',
-        });
-        let instant = localMidnightAsUtc;
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-            const parts = Object.fromEntries(formatter.formatToParts(instant)
-                .filter(part => part.type !== 'literal')
-                .map(part => [part.type, Number(part.value)]));
-            const renderedAsUtc = Date.UTC(
-                parts.year, parts.month - 1, parts.day,
-                parts.hour, parts.minute, parts.second,
-            );
-            instant = localMidnightAsUtc - (renderedAsUtc - instant);
-        }
-        return new Date(instant).toISOString();
-    } catch (error) {
-        console.warn('Could not resolve imported event time zone for reminder picker:', error);
-        return new Date(`${event.startDate}T00:00:00`).toISOString();
-    }
-}
-
-function isImportedEventPast(event: CalendarEvent, now = new Date()): boolean {
-    if (!event.allDay) {
-        const end = event.endTime ?? event.startTime;
-        return end != null && new Date(end).getTime() <= now.getTime();
-    }
-
-    const endDate = event.endDate ?? event.startDate;
-    if (!endDate) return false;
-
-    try {
-        const parts = new Intl.DateTimeFormat('en-US', {
-            timeZone: event.timeZone,
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-        }).formatToParts(now);
-        const dateParts = Object.fromEntries(parts.map(part => [part.type, part.value]));
-        const today = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
-        return endDate < today;
-    } catch (error) {
-        console.warn('Could not resolve imported event time zone:', error);
-        return endDate < format(now, 'yyyy-MM-dd');
-    }
-}
-
-function recurrenceDraftFromSeries(series: TaskSeries | null): TaskRecurrenceDraft {
-    if (!series?.active) return defaultTaskRecurrence();
-
-    return {
-        recurrenceFrequency: series.recurrenceFrequency,
-        recurrenceEndDate: series.recurrenceEndDate,
-        recurrenceInterval: series.recurrenceInterval,
-        recurrenceUnit: series.recurrenceUnit,
-        timeZone: series.timeZone,
-    };
-}
-
-function recurrenceDraftsEqual(first: TaskRecurrenceDraft, second: TaskRecurrenceDraft): boolean {
-    return first.recurrenceFrequency === second.recurrenceFrequency
-        && first.recurrenceEndDate === second.recurrenceEndDate
-        && first.recurrenceInterval === second.recurrenceInterval
-        && first.recurrenceUnit === second.recurrenceUnit
-        && first.timeZone === second.timeZone;
-}
-
 type CreateTab = 'event' | 'task' | 'stats';
 
 type CalendarItemTarget =
@@ -418,69 +163,6 @@ type MoreDayPopoverState = {
     width: number;
     events: EventApi[];
 };
-
-const calendarLoadingReveal = keyframes`
-    from {
-        opacity: 0;
-        transform: translate3d(0, 8px, 0);
-    }
-    to {
-        opacity: 1;
-        transform: none;
-    }
-`;
-
-function CalendarLoadingState() {
-    return (
-        <Box sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            flex: 1,
-            minHeight: 0,
-            gap: 1.5,
-            animation: `${calendarLoadingReveal} 420ms cubic-bezier(0.22, 1, 0.36, 1) both`,
-            '@media (prefers-reduced-motion: reduce)': {
-                animation: 'none',
-                '& .MuiSkeleton-root': { animation: 'none' },
-            },
-        }}>
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 1 }}>
-                <Skeleton animation="wave" variant="rounded" width={32} height={32} />
-                <Skeleton animation="wave" variant="rounded" width={32} height={32} />
-                <Skeleton animation="wave" variant="rounded" width={72} height={36} />
-                <Skeleton animation="wave" variant="text" width={190} height={36} />
-            </Stack>
-            <Box sx={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                gridTemplateRows: 'auto repeat(6, minmax(0, 1fr))',
-                gap: '1px',
-                flex: 1,
-                minHeight: 0,
-                p: '1px',
-                bgcolor: 'divider',
-            }}>
-                {Array.from({ length: 49 }, (_, index) => (
-                    <Box key={index} sx={{
-                        bgcolor: 'background.paper',
-                        p: 1,
-                        animation: `${calendarLoadingReveal} 360ms cubic-bezier(0.22, 1, 0.36, 1) ${Math.min(index, 8) * 25}ms both`,
-                        '@media (prefers-reduced-motion: reduce)': {
-                            animation: 'none',
-                            '& .MuiSkeleton-root': { animation: 'none' },
-                        },
-                    }}>
-                        {index < 7 ? (
-                            <Skeleton animation="wave" variant="text" width="65%" height={20} />
-                        ) : (
-                            <Skeleton animation="wave" variant="text" width="18%" height={20} sx={{ ml: 'auto' }} />
-                        )}
-                    </Box>
-                ))}
-            </Box>
-        </Box>
-    );
-}
 
 export function MonthCalendar({
     tasks, groups, events, calendars, calendarManager, onExportEvents, onCreateTask, onDeleteTask, onDeleteTaskOccurrence, onDeleteTaskFutureOccurrences, onUpdateTask, onCreateEvent, onUpdateEvent, onUpdateImportedEventReminder, onDeleteEvent,
