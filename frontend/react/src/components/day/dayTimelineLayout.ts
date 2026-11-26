@@ -12,6 +12,9 @@ export interface ScreenSegmentInput extends TimeInterval {
 }
 
 export interface PlannedInput extends TimeInterval {
+    eventId?: string;
+    occurrenceKey?: string;
+    occurrenceDate?: string;
     id: string;
     // 'timer' is time actually spent, from an activity timer.
     kind: 'event' | 'focus' | 'timer';
