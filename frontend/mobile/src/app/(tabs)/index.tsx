@@ -10,10 +10,11 @@ import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { TaskBulkDateSheet } from '@/components/tasks/TaskBulkDateSheet';
 import { TaskGroupComposerSheet } from '@/components/tasks/TaskGroupComposerSheet';
 import { TaskSelectionActionsPopup } from '@/components/tasks/TaskSelectionActionsPopup';
-import { TaskRow, type TaskDragLayout } from '@/components/tasks/TaskRow';
+import { TASK_ROW_INSET, TaskRow, type TaskDragLayout } from '@/components/tasks/TaskRow';
 import { TaskSection } from '@/components/tasks/TaskSection';
 import { DraggableTaskGroup } from '@/components/tasks/DraggableTaskGroup';
-import { GroupChevron } from '@/components/tasks/GroupChevron';
+import { GroupChevron, GroupConnector } from '@/components/tasks/GroupChevron';
+import { Collapsible } from '@/components/ui/Collapsible';
 import { MentalStateBadge } from '@/components/mind/MentalStateBadge';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppText } from '@/components/ui/AppText';
@@ -111,7 +112,7 @@ function TodaySnapshotCard({ snapshot }: { snapshot: TodaySnapshot | null }) {
   const stateColor = mentalState ? colors.text : colors.textMuted;
 
   return (
-    <Card style={styles.snapshotCard}>
+    <Card style={[styles.flatCard, styles.snapshotCard]}>
       <AppText variant="label" color="muted" style={styles.snapshotEyebrow}>MENTAL STATE</AppText>
       <SilentPressable
         accessibilityRole="button"
@@ -227,7 +228,8 @@ function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskListItem[] 
     } else if (!emittedGroupIds.has(group.groupId)) {
       emittedGroupIds.add(group.groupId);
       const groupTasks = tasks.filter(candidate => groupByTaskId.get(candidate.taskId)?.groupId === group.groupId);
-      if ((group.isStatGroup || group.linkedToMentalThread) && groupTasks.length === 1) {
+      // Home shows a group with one task left as that task alone; the Tasks tab keeps the group.
+      if (groupTasks.length === 1) {
         items.push({ kind: 'task', task: groupTasks[0] });
         return items;
       }
@@ -379,7 +381,6 @@ export default function TodayScreen() {
   }
 
   function toggleGroup(groupId: string) {
-    animateLayout();
     setCollapsedGroupIds(previous => {
       const next = new Set(previous);
       if (next.has(groupId)) next.delete(groupId);
@@ -933,7 +934,7 @@ export default function TodayScreen() {
                       pressed && styles.pressed,
                     ]}
                   >
-                    {!collapsedGroupIds.has(item.group.groupId) && <View pointerEvents="none" style={[styles.groupConnector, { backgroundColor: colors.border }]} />}
+                    <GroupConnector visible={!collapsedGroupIds.has(item.group.groupId)} color={colors.border} style={styles.groupConnector} />
                     <GroupChevron
                       collapsed={collapsedGroupIds.has(item.group.groupId)}
                       color={selectedGroupIdSet.has(item.group.groupId) || dragTargetGroupId === item.group.groupId ? colors.accent : colors.textMuted}
@@ -978,7 +979,7 @@ export default function TodayScreen() {
                   </SilentPressable>
                 )}
               >
-                {!collapsedGroupIds.has(item.group.groupId) && (
+                <Collapsible expanded={!collapsedGroupIds.has(item.group.groupId)}>
                   <View
                     style={[
                       styles.groupTasks,
@@ -1012,7 +1013,7 @@ export default function TodayScreen() {
                         />
                     ))}
                   </View>
-                )}
+                </Collapsible>
                 {dragTargetItemKey === groupItemKey(item.group.groupId) && (
                   <View
                     pointerEvents="none"
@@ -1063,7 +1064,7 @@ export default function TodayScreen() {
             </TaskSection>
           )}
           {showTodayEvents && (
-            <Card style={styles.eventsCard}>
+            <Card style={[styles.flatCard, styles.eventsCard]}>
               <View style={styles.spaceBetween}>
                 <AppText variant="heading">Today’s events</AppText>
                 <AppButton compact variant="ghost" label="Calendar" icon="calendar-outline" onPress={() => router.push('/calendar')} />
@@ -1152,15 +1153,20 @@ export default function TodayScreen() {
   );
 }
 
+// The group's guide line runs down from the middle of its chevron.
+const GROUP_LINE_LEFT = TASK_ROW_INSET + 8;
+
 const styles = StyleSheet.create({
-  snapshotCard: { gap: 12, padding: 18, borderRadius: 20, borderWidth: 0 },
+  // Like task rows: no border or fill, sitting straight on the page.
+  flatCard: { backgroundColor: 'transparent', borderWidth: 0, borderRadius: 0, shadowOpacity: 0, elevation: 0, paddingHorizontal: 0 },
+  snapshotCard: { gap: 10, paddingVertical: 4 },
   snapshotEyebrow: { fontSize: 11, lineHeight: 15, letterSpacing: 1.1 },
-  snapshotStateRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  snapshotStateRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 11, paddingLeft: TASK_ROW_INSET - 4, paddingRight: 13 },
   snapshotStateText: { flex: 1, minWidth: 0, fontSize: 23, lineHeight: 29, letterSpacing: -0.35 },
   snapshotGoalPill: { flexShrink: 0, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 14 },
-  eventsCard: { gap: 12 },
+  eventsCard: { gap: 12, paddingVertical: 0 },
   eventsList: { gap: 4 },
-  eventRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  eventRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6, paddingLeft: TASK_ROW_INSET + 5, paddingRight: 13 },
   eventDot: { width: 8, height: 8, borderRadius: 4 },
   eventCopy: { flex: 1, gap: 2 },
   cancelled: { textDecorationLine: 'line-through', opacity: 0.62 },
@@ -1168,14 +1174,14 @@ const styles = StyleSheet.create({
   taskActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   list: { gap: TASK_LIST_GAP },
   group: { borderWidth: 0, borderRadius: 0, overflow: 'visible' },
-  groupHeader: { minHeight: 64, borderTopLeftRadius: 19, borderTopRightRadius: 19, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 },
+  groupHeader: { minHeight: 64, borderTopLeftRadius: 19, borderTopRightRadius: 19, flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: TASK_ROW_INSET, paddingRight: 14 },
   groupHeaderCollapsed: { borderBottomLeftRadius: 19, borderBottomRightRadius: 19 },
   groupHeaderExpanded: { borderBottomWidth: 0 },
   groupSelection: { flex: 1, minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 8 },
   groupTitle: { flex: 1 },
   groupSelect: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
-  groupTasks: { paddingVertical: 0, marginLeft: 22, paddingLeft: 12, borderLeftWidth: 2 },
-  groupConnector: { position: 'absolute', left: 22, top: 48, bottom: 0, width: 2 },
+  groupTasks: { paddingVertical: 0, marginLeft: GROUP_LINE_LEFT, paddingLeft: 12, borderLeftWidth: 2 },
+  groupConnector: { position: 'absolute', left: GROUP_LINE_LEFT, top: 42, bottom: 0, width: 2 },
   groupDropIndicator: { position: 'absolute', left: 12, right: 12, height: 3, borderRadius: 2, zIndex: 22, elevation: 4, shadowOpacity: 0.5, shadowRadius: 4 },
   groupDropIndicatorBefore: { top: -6.5 },
   groupDropIndicatorAfter: { bottom: -6.5 },

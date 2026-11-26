@@ -4,6 +4,7 @@ export type TaskListItem =
     | { kind: 'task'; task: Task }
     | { kind: 'group'; group: TaskGroup; tasks: Task[] };
 
+/** Home shows a group with one visible task as that task alone; the Tasks page keeps the group. */
 export function shouldRenderTaskGroup(tasks: Task[]): boolean {
     return tasks.length > 1;
 }
@@ -33,21 +34,10 @@ export function buildTaskListItems(tasks: Task[], groups: TaskGroup[]): TaskList
         else tasksByGroupId.set(groupId, [task]);
     });
 
-    const singletonGroups = new Map<string, TaskGroup>();
-    groupCandidates.forEach(group => {
-        const groupTasks = tasksByGroupId.get(group.groupId) ?? [];
-        if (groupTasks.length > 0 && !shouldRenderTaskGroup(groupTasks)) {
-            singletonGroups.set(groupTasks[0].taskId, group);
-        }
-    });
-
     const emittedGroupIds = new Set<string>();
     return uniqueTasks.reduce<TaskListItem[]>((items, task) => {
         const group = groupByTaskId.get(task.taskId);
-        const singletonGroup = singletonGroups.get(task.taskId);
         if (!group) {
-            items.push({ kind: 'task', task });
-        } else if (singletonGroup?.groupId === group.groupId) {
             items.push({ kind: 'task', task });
         } else if (!emittedGroupIds.has(group.groupId)) {
             emittedGroupIds.add(group.groupId);

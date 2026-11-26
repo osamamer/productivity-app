@@ -2,6 +2,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, StyleSheet, View } from 'react-native';
 
+import { useBoundariesAccess } from '@/components/boundaries/BoundariesGate';
+import { BoundariesLockCard } from '@/components/boundaries/BoundariesLock';
 import { DelayEditor, type DelayDraft } from '@/components/boundaries/DelayEditor';
 import { PasswordPrompt } from '@/components/boundaries/PasswordPrompt';
 import { WindowEditor, type WindowDraft } from '@/components/boundaries/WindowEditor';
@@ -56,6 +58,7 @@ function LimitRow({ label, hint, value, unit, onChange }: { label: string; hint:
 
 export default function BoundaryRuleEditor() {
   const { colors } = useAppTheme();
+  const { editable } = useBoundariesAccess();
   const { pkg } = useLocalSearchParams<{ pkg: string }>();
   const app = installedApp(pkg);
   const appName = app?.appName ?? pkg;
@@ -157,7 +160,7 @@ export default function BoundaryRuleEditor() {
   const usageLine = original ? summarizeUsage(original, usage) : null;
 
   return (
-    <Screen back action={<AppButton compact label="Save" loading={saving} disabled={loading} onPress={onSave} />}>
+    <Screen back action={editable ? <AppButton compact label="Save" loading={saving} disabled={loading} onPress={onSave} /> : undefined}>
       <View style={styles.appRow}>
         {app?.icon ? <Image source={{ uri: `data:image/png;base64,${app.icon}` }} style={styles.icon} /> : null}
         <View style={styles.appCopy}>
@@ -167,6 +170,8 @@ export default function BoundaryRuleEditor() {
         </View>
       </View>
 
+      {!editable && <BoundariesLockCard />}
+
       {error ? (
         <View style={[styles.error, { backgroundColor: `${colors.danger}18`, borderColor: `${colors.danger}55` }]}>
           <AppText color="danger">{error}</AppText>
@@ -174,7 +179,8 @@ export default function BoundaryRuleEditor() {
       ) : null}
 
       {loading ? <ActivityIndicator color={colors.accent} style={styles.loading} /> : (
-        <>
+        // Locked, the rule can be read but not touched.
+        <View pointerEvents={editable ? 'auto' : 'none'} style={styles.form}>
           <Card style={styles.section}>
             <AppText variant="heading">Block completely</AppText>
             <ChoiceChips<BlockMode>
@@ -231,7 +237,7 @@ export default function BoundaryRuleEditor() {
           {original && (
             <AppButton variant="danger" label="Remove every boundary for this app" onPress={() => attemptSave(null)} />
           )}
-        </>
+        </View>
       )}
 
       <PasswordPrompt
@@ -259,6 +265,7 @@ const styles = StyleSheet.create({
   appCopy: { flex: 1, gap: 2 },
   error: { borderRadius: 14, borderWidth: 1, padding: 12 },
   loading: { marginTop: 40 },
+  form: { gap: 16 },
   section: { gap: 12 },
   limitRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   limitCopy: { flex: 1, gap: 2 },

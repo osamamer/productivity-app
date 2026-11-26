@@ -24,8 +24,8 @@ Autolinked as a local Expo module; there is no iOS or web implementation (`Bound
   the app unlocks by itself or after tapping Open.
 - `BoundariesPrefs` keeps rules and the two password hashes (PBKDF2) in EncryptedSharedPreferences.
   Adding or tightening a rule is free; loosening or removing one needs the master password (checked
-  by the UI with `isLooser` in `src/lib/boundaryRules.ts`). The unlock password opens the screens
-  and pauses enforcement for five minutes (`AutoResumeReceiver` resumes it). Every password the
+  by the UI with `isLooser` in `src/lib/boundaryRules.ts`). The screens can always be read; the unlock
+  password allows changes in them for ten minutes (`BoundariesGate`) and also pauses enforcement for five minutes (`AutoResumeReceiver` resumes it). Every password the
   screens ask for is followed by a ten second wait before it takes effect (`usePasswordWait`).
 - `AppStopper` is how every kick and expiry shuts an app down: `MediaStopper` stops its audio first,
   then it is force-stopped. Without Shizuku nothing else can stop a music player's foreground

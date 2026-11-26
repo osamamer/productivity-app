@@ -13,6 +13,9 @@ import { AppText } from '../ui/AppText';
 import { SilentPressable } from '../ui/SilentPressable';
 import { DRAG_HOLD_DURATION_MS, useLongPressDrag } from './useLongPressDrag';
 
+/** Left inset of a task row; group headers use it so their chevron sits over task checkboxes. */
+export const TASK_ROW_INSET = 7;
+
 export interface TaskDragLayout {
   left: number;
   top: number;
@@ -203,7 +206,8 @@ const styles = StyleSheet.create({
     minHeight: 68,
     borderRadius: 0,
     paddingVertical: 12,
-    paddingHorizontal: 13,
+    paddingLeft: TASK_ROW_INSET,
+    paddingRight: 13,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,

@@ -1,22 +1,41 @@
-import { PropsWithChildren, useEffect, useState } from 'react';
+import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, AppState, PermissionsAndroid, Platform, View } from 'react-native';
 
-import { boundariesUnlockRemaining, unlockBoundaries } from '@/lib/boundariesSession';
+import { boundariesUnlockRemaining, clearBoundariesSession, unlockBoundaries } from '@/lib/boundariesSession';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { Boundaries } from '@/services/boundaries';
-import { BoundariesLock } from './BoundariesLock';
 import { BoundariesSetup } from './BoundariesSetup';
 
-type GateState = 'loading' | 'setup' | 'locked' | 'open';
+interface BoundariesAccess {
+  /** Whether changes are allowed: the unlock password was entered less than ten minutes ago. */
+  editable: boolean;
+  unlock: () => void;
+  lock: () => void;
+}
 
-/** Password authorization lasts ten minutes, including navigation and time in the background. */
+const BoundariesAccessContext = createContext<BoundariesAccess>({ editable: false, unlock: () => {}, lock: () => {} });
+
+export function useBoundariesAccess(): BoundariesAccess {
+  return useContext(BoundariesAccessContext);
+}
+
+/**
+ * Boundaries can always be looked at; changing them needs the unlock password, which lasts ten
+ * minutes including navigation and time in the background. Without passwords yet, sets them up first.
+ */
 export function BoundariesGate({ children }: PropsWithChildren) {
   const { colors } = useAppTheme();
-  const [state, setState] = useState<GateState>('loading');
-  const open = () => {
+  const [state, setState] = useState<'loading' | 'setup' | 'ready'>('loading');
+  const [editable, setEditable] = useState(() => boundariesUnlockRemaining() > 0);
+
+  const unlock = useCallback(() => {
     unlockBoundaries();
-    setState('open');
-  };
+    setEditable(true);
+  }, []);
+  const lock = useCallback(() => {
+    clearBoundariesSession();
+    setEditable(false);
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -28,21 +47,23 @@ export function BoundariesGate({ children }: PropsWithChildren) {
           console.warn('Notification permission request failed:', cause);
         }
       }
-      setState((await Boundaries?.hasPasswordsSet()) ? boundariesUnlockRemaining() > 0 ? 'open' : 'locked' : 'setup');
+      setState((await Boundaries?.hasPasswordsSet()) ? 'ready' : 'setup');
     })();
   }, []);
 
   useEffect(() => {
-    if (state !== 'open') return;
+    if (!editable) return;
     const lockIfExpired = () => {
-      if (boundariesUnlockRemaining() === 0) setState('locked');
+      if (boundariesUnlockRemaining() === 0) setEditable(false);
     };
     const timer = setTimeout(lockIfExpired, boundariesUnlockRemaining());
     const subscription = AppState.addEventListener('change', next => {
       if (next === 'active') lockIfExpired();
     });
     return () => { clearTimeout(timer); subscription.remove(); };
-  }, [state]);
+  }, [editable]);
+
+  const access = useMemo(() => ({ editable, unlock, lock }), [editable, unlock, lock]);
 
   if (state === 'loading') {
     return (
@@ -51,7 +72,6 @@ export function BoundariesGate({ children }: PropsWithChildren) {
       </View>
     );
   }
-  if (state === 'setup') return <BoundariesSetup onDone={open} />;
-  if (state === 'locked') return <BoundariesLock onUnlocked={open} />;
-  return children;
+  if (state === 'setup') return <BoundariesSetup onDone={() => { unlock(); setState('ready'); }} />;
+  return <BoundariesAccessContext.Provider value={access}>{children}</BoundariesAccessContext.Provider>;
 }

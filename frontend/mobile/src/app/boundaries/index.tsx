@@ -2,6 +2,9 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { AppState, StyleSheet, Switch, View } from 'react-native';
 
+import { useBoundariesAccess } from '@/components/boundaries/BoundariesGate';
+import { BoundariesLockCard } from '@/components/boundaries/BoundariesLock';
+import { BoundaryStatusCard } from '@/components/boundaries/BoundaryStatusCard';
 import { PasswordPrompt } from '@/components/boundaries/PasswordPrompt';
 import { SettingRow } from '@/components/boundaries/SettingRow';
 import { AppButton } from '@/components/ui/AppButton';
@@ -11,11 +14,18 @@ import { Screen } from '@/components/ui/Screen';
 import { SilentPressable } from '@/components/ui/SilentPressable';
 import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
-import { Boundaries, type EnforcementState } from '@/services/boundaries';
+import { rememberInstalledApps } from '@/lib/boundaryAppsCache';
+import type { AppRule, AppUsage } from '@/lib/boundaryRules';
+import { boundaryStatusRows } from '@/lib/boundaryStatus';
+import { Boundaries, type EnforcementState, type InstalledApp } from '@/services/boundaries';
+
+// Usage counts come from the background service; re-read them this often while the page is open.
+const USAGE_REFRESH_MS = 15_000;
 
 interface Status {
   enforcement: EnforcementState;
-  ruleCount: number;
+  rules: AppRule[];
+  usage: Record<string, AppUsage>;
   accessibility: boolean;
   deviceAdmin: boolean;
   shizukuRunning: boolean;
@@ -30,9 +40,10 @@ function formatCountdown(ms: number): string {
 
 async function loadStatus(): Promise<Status | null> {
   if (!Boundaries) return null;
-  const [enforcement, rules, accessibility, deviceAdmin, shizukuRunning, shizukuGranted, mediaControl] = await Promise.all([
+  const [enforcement, rules, usage, accessibility, deviceAdmin, shizukuRunning, shizukuGranted, mediaControl] = await Promise.all([
     Boundaries.getEnforcementState(),
     Boundaries.getRules(),
+    Boundaries.getUsageToday(),
     Boundaries.isAccessibilityServiceEnabled(),
     Boundaries.isDeviceAdminActive(),
     Boundaries.isShizukuRunning(),
@@ -40,13 +51,18 @@ async function loadStatus(): Promise<Status | null> {
     Boundaries.isMediaControlAllowed(),
   ]);
   return {
-    enforcement, ruleCount: (JSON.parse(rules) as unknown[]).length, accessibility, deviceAdmin, shizukuRunning, shizukuGranted, mediaControl,
+    enforcement,
+    rules: JSON.parse(rules) as AppRule[],
+    usage: JSON.parse(usage) as Record<string, AppUsage>,
+    accessibility, deviceAdmin, shizukuRunning, shizukuGranted, mediaControl,
   };
 }
 
 export default function BoundariesHome() {
   const { colors } = useAppTheme();
   const popup = useAppPopup();
+  const { editable } = useBoundariesAccess();
+  const [apps, setApps] = useState<Map<string, InstalledApp>>(() => new Map());
   const [status, setStatus] = useState<Status | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [prompt, setPrompt] = useState<'pause' | 'master' | null>(null);
@@ -57,7 +73,20 @@ export default function BoundariesHome() {
     loadStatus().then(setStatus).catch(cause => console.error('Could not load Boundaries status:', cause));
   }, []);
 
-  useFocusEffect(refresh);
+  useFocusEffect(useCallback(() => {
+    refresh();
+    const interval = setInterval(refresh, USAGE_REFRESH_MS);
+    return () => clearInterval(interval);
+  }, [refresh]));
+
+  useEffect(() => {
+    Boundaries?.getInstalledApps()
+      .then(list => {
+        rememberInstalledApps(list);
+        setApps(new Map(list.map(app => [app.packageName, app])));
+      })
+      .catch(cause => console.error('Could not load installed apps for Boundaries:', cause));
+  }, []);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', next => { if (next === 'active') refresh(); });
@@ -135,6 +164,7 @@ export default function BoundariesHome() {
           </View>
           <Switch
             value={enforcement?.active ?? false}
+            disabled={Boolean(enforcement?.active) && !editable}
             onValueChange={value => (value ? void turnOn() : setPrompt('pause'))}
             trackColor={{ true: colors.accent, false: colors.border }}
             thumbColor={colors.surface}
@@ -143,19 +173,32 @@ export default function BoundariesHome() {
         {enforcement?.indefinitelyDisabled ? (
           <AppButton label="Turn boundaries back on" onPress={() => void turnOn()} />
         ) : (
-          <SilentPressable accessibilityRole="button" onPress={() => setPrompt('master')} style={styles.link}>
+          <SilentPressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !editable }}
+            disabled={!editable}
+            onPress={() => setPrompt('master')}
+            style={[styles.link, !editable && styles.disabled]}>
             <AppText variant="caption" color="danger">Master override (turn off until I turn them back on)</AppText>
           </SilentPressable>
         )}
       </Card>
 
+      <BoundariesLockCard />
+      {status && <BoundaryStatusCard rows={boundaryStatusRows(status.rules, status.usage)} apps={apps} />}
+
       <SettingRow
         icon="apps-outline"
         title="App rules"
-        subtitle={`Block, time limits, open limits, schedules · ${status?.ruleCount ?? 0} apps`}
+        subtitle={`Block, time limits, open limits, schedules · ${status?.rules.length ?? 0} apps`}
         onPress={() => router.push('/boundaries/apps')}
       />
-      <SettingRow icon="key-outline" title="Change passwords" onPress={() => router.push('/boundaries/passwords')} />
+      <SettingRow
+        icon="key-outline"
+        title="Change passwords"
+        subtitle={editable ? undefined : 'Unlock first'}
+        onPress={editable ? () => router.push('/boundaries/passwords') : undefined}
+      />
 
       <AppText variant="label" color="muted" style={styles.section}>Needed for boundaries to work</AppText>
       <SettingRow
@@ -257,4 +300,5 @@ const styles = StyleSheet.create({
   link: { paddingVertical: 4, alignItems: 'center' },
   section: { marginTop: 8, textTransform: 'uppercase', letterSpacing: 0.6 },
   buttons: { gap: 6 },
+  disabled: { opacity: 0.45 },
 });
