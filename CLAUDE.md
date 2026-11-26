@@ -30,7 +30,10 @@ cd backend && ./mvnw clean package            # Build JAR
 cd frontend/react && npm run dev      # Dev server (port 5173)
 cd frontend/react && npm run build    # Production build
 cd frontend/react && npm run lint     # ESLint (max-warnings 0)
+cd frontend/react && npm test         # Vitest component and unit tests (src/**/*.test.ts[x])
 ```
+
+Component tests render real pages with Testing Library against an in-memory API served by MSW (`src/test/fakeBackend.ts`, `renderPage`/`renderHome`); mock only that HTTP boundary, the STOMP socket and canvas, which `src/test/setup.ts` stubs. Pure logic pulled out of large components gets a colocated `*.test.ts`.
 
 ### Commit and push after changes
 

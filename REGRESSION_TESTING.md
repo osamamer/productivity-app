@@ -39,6 +39,15 @@ cd backend && ./mvnw -B -ntp -Dtest=EndToEndTest,TaskProjectAssignmentTest,Menta
 
 The client suites use Node's built-in test runner. Web recurrence tests use Vite's SSR transformer, so the web job installs its existing npm dependencies; other cases import production TypeScript helpers directly. They need Node 22 but do not launch a browser or emulator, or start backend services.
 
+## Web component tests
+
+`cd frontend/react && npm test` runs Vitest with jsdom, Testing Library and MSW. Page tests render the real page inside the app's providers against an in-memory task API (`src/test/fakeBackend.ts`); only HTTP, the STOMP socket and canvas confetti are stubbed. The `Regression` workflow runs them after the web regressions.
+
+- **Home** (`HomePage.test.tsx`): today's tasks, older tasks behind their toggle, adding, completing with undo, deleting with confirm, undo, cancel and failure rollback, task groups, today's events, and a malformed event leaving the task list working.
+- **Settings** (`SettingsPage.test.tsx`): the page renders with its check-up and browser notification sections.
+- **Task row Pomodoro panel** (`task-row/PomodoroPanel.test.tsx`): countdown, time adjustment, breaks, waiting phases, starting and dismissing.
+- **Pure helpers**: Home's today, visible and older task lists (`homeTaskBuckets.test.ts`), delete scopes for recurring tasks (`taskDeletionScope.test.ts`), and which stats the Stats page lists (`statsPageDefinitions.test.ts`).
+
 ## Calendar popup browser regression
 
 Run `cd frontend/react && npx playwright test -c playwright.calendar.config.ts` after installing Playwright Chromium (`npx playwright install chromium`). This separate browser suite starts Vite and renders the real `MonthCalendar` with fixture tasks and intercepted API responses; it needs no backend or account. It follows a lower-row Stat group → task editor click, delays recurrence loading until after the initial measurement, checks that the expanded editor retains a 12px bottom margin and its horizontal anchor without centering or internal clipping, and repeats after reopening. It runs both in the page and in a shorter embedded frame to check frame-local bounds. Busy-calendar cases also check initial centering on today without resetting later manual scrolling, and a tall day expansion staying below the calendar header during scrolling and window resizing.

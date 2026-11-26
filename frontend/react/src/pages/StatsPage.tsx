@@ -2,14 +2,27 @@ import { CompactPopover } from '../components/CompactPopover';
 import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    Box, Button, Typography, Alert, FormControlLabel, Switch,
-    Stack, Skeleton, IconButton, DialogTitle,
-    DialogContent, DialogContentText, DialogActions, TextField,
-    Collapse, ListItemIcon, ListItemText, Menu,
-    MenuItem, Snackbar,
+    Box,
+    Button,
+    Typography,
+    Alert,
+    FormControlLabel,
+    Switch,
+    Stack,
+    IconButton,
+    DialogTitle,
+    DialogContent,
+    DialogContentText,
+    DialogActions,
+    TextField,
+    Collapse,
+    ListItemIcon,
+    ListItemText,
+    Menu,
+    MenuItem,
+    Snackbar,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { keyframes } from '@mui/system';
 import AddIcon from '@mui/icons-material/Add';
 import AddTaskOutlinedIcon from '@mui/icons-material/AddTaskOutlined';
 import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
@@ -44,7 +57,6 @@ import { useKeyboardDelete } from '../hooks/useKeyboardDelete';
 import { statService } from '../services/api/statService';
 import { statGroupService } from '../services/api/statGroupService';
 import { subscribeToResourceInvalidation } from '../services/cache/resourceInvalidation';
-import { topLevelStatDefinitions } from '../services/utils/statDefinitionHierarchy';
 import {
     readOpenStatGroupIds,
     statGroupPreferencesStorageKey,
@@ -53,30 +65,14 @@ import {
 import { useAppRefresh } from '../hooks/useAppRefresh';
 import { keepUnchanged } from '../services/utils/keepUnchanged';
 
-const DEDICATED_SYSTEM_KEYS = new Set([
-    'meditated',
-    'meditation_minutes',
-    'energy',
-    'activation',
-    'stimulation_hunger',
-    'clarity',
-    'stimulation',
-    'hunger',
-    'arousal',
-    'valence',
-    'emotional_load',
-]);
-
-const EDITABLE_SYSTEM_KEYS = new Set(['sleep_hours', 'sleep_time', 'wake_up_time']);
-
-function isEditableSystemStat(definition: StatDefinition): boolean {
-    return definition.systemKey !== undefined && EDITABLE_SYSTEM_KEYS.has(definition.systemKey);
-}
-
-function canCreateRecurringTask(definition: StatDefinition): boolean {
-    return definition.type === 'BOOLEAN' && !definition.recurringTaskSeriesId;
-}
-
+import {
+    canCreateRecurringTask,
+    isDedicatedStat,
+    isEditableSystemStat,
+    statListDefinitions,
+} from '../components/stats/statsPageDefinitions';
+import { selectionActionsReveal } from '../components/stats/statsPageMotion';
+import { StatsLoadingState } from '../components/stats/StatsLoadingState';
 const SELECTION_ACTIONS_EDGE_PADDING = 12;
 const SELECTION_ACTIONS_GAP = 12;
 const SELECTION_ACTIONS_FALLBACK_WIDTH = 88;
@@ -105,98 +101,6 @@ type PendingDefinitionMutation = {
 function popupPositionForElement(element: HTMLElement): PopupPosition {
     const bounds = element.getBoundingClientRect();
     return { top: bounds.bottom + 8, left: bounds.left };
-}
-
-const selectionActionsReveal = keyframes`
-    from { opacity: 0; }
-    to { opacity: 1; }
-`;
-
-function isDedicatedStat(definition: StatDefinition): boolean {
-    const isOptionalMeditationStat = definition.systemKey === 'meditated'
-        && definition.showOnStatsPage;
-    return definition.systemKey !== undefined
-        && DEDICATED_SYSTEM_KEYS.has(definition.systemKey)
-        && !isOptionalMeditationStat;
-}
-
-function statListDefinitions(definitions: StatDefinition[]): StatDefinition[] {
-    return topLevelStatDefinitions(definitions).filter(definition => !isDedicatedStat(definition));
-}
-
-function StatsLoadingState() {
-    return (
-        <Box sx={{
-            display: 'flex',
-            flex: 1,
-            gap: 2,
-            overflow: 'hidden',
-            minHeight: 0,
-            flexDirection: { xs: 'column', md: 'row' },
-        }}>
-            <Box sx={{
-                width: { xs: '100%', md: 360 },
-                flexShrink: 0,
-                overflow: 'hidden',
-                borderRadius: 2,
-                border: 1,
-                borderColor: 'divider',
-                p: 1.5,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 1.25,
-                minHeight: { xs: 180, md: 0 },
-                maxHeight: { xs: 270, md: 'none' },
-            }}>
-                {[0, 1].map(group => (
-                    <Box key={group}>
-                        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                            <Skeleton variant="rounded" width={28} height={28} />
-                            <Skeleton variant="text" width={`${42 + group * 12}%`} />
-                        </Stack>
-                        {[0, 1].map(stat => (
-                            <Stack key={stat} direction="row" alignItems="center" spacing={1} sx={{ pl: 3, mb: 1.25 }}>
-                                <Box sx={{ flex: 1 }}>
-                                    <Skeleton variant="text" width={`${62 + stat * 13}%`} />
-                                    <Skeleton variant="text" width={`${42 + stat * 9}%`} height={17} />
-                                </Box>
-                                <Skeleton variant="circular" width={24} height={24} />
-                            </Stack>
-                        ))}
-                    </Box>
-                ))}
-            </Box>
-            <Box sx={{
-                flex: 1,
-                minWidth: 0,
-                overflow: 'hidden',
-                borderRadius: 2,
-                border: 1,
-                borderColor: 'divider',
-            }}>
-                <Stack direction="row" alignItems="center" spacing={1.5} sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-                    <Skeleton variant="circular" width={34} height={34} />
-                    <Box sx={{ flex: 1 }}>
-                        <Skeleton variant="text" width="30%" height={25} />
-                        <Skeleton variant="text" width="48%" height={18} />
-                    </Box>
-                    <Skeleton variant="rounded" width={34} height={34} />
-                </Stack>
-                <Box sx={{ p: { xs: 1.5, md: 2 } }}>
-                    <Stack direction="row" spacing={1.5} sx={{ mb: 2 }}>
-                        {[0, 1, 2].map(item => (
-                            <Skeleton key={item} variant="rounded" height={58} sx={{ flex: 1 }} />
-                        ))}
-                    </Stack>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1.5} sx={{ mb: 2 }}>
-                        <Skeleton variant="rounded" width={190} height={34} />
-                        <Skeleton variant="rounded" width={220} height={40} />
-                    </Stack>
-                    <Skeleton variant="rounded" height={200} />
-                </Box>
-            </Box>
-        </Box>
-    );
 }
 
 export function StatsPage() {
