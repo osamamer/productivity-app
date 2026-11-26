@@ -68,7 +68,7 @@ export default function StatsScreen() {
       api.stats.groups(),
     ]);
     return { definitions: definitions.filter(isManualDefinition), entries, groups };
-  });
+  }, `stats:${localDate()}`);
   const [selected, setSelected] = useState<StatDefinition | null>(null);
   const [selectedInitialDate, setSelectedInitialDate] = useState<string | undefined>();
   const [logSheetOpen, setLogSheetOpen] = useState(false);

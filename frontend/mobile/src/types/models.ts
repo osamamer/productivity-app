@@ -289,6 +289,8 @@ export interface CalendarEvent {
   createdAt: string;
   updatedAt: string;
   sourceId?: string | null;
+  activityId?: string | null;
+  taskId?: string | null;
 }
 
 export interface CalendarEventFutureDeletionResponse {

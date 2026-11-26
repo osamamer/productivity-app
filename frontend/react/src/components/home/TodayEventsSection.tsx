@@ -1,3 +1,4 @@
+import { isNormalCalendarEvent } from '../../../../shared/calendarEventKind';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { addDays, format } from 'date-fns';
 import { keyframes } from '@mui/system';
@@ -143,7 +144,7 @@ function eventsForToday(events: CalendarEvent[], dayStart: Date): TodayEvent[] {
     const todayKey = format(dayStart, 'yyyy-MM-dd');
     const todayEvents: TodayEvent[] = [];
 
-    events.forEach(event => {
+    events.filter(isNormalCalendarEvent).forEach(event => {
         expandCalendarEvent(event, dayStart, dayEnd).forEach(occurrence => {
             if (occurrence.allDay) {
                 if (occurrence.occurrenceDate > todayKey || occurrence.end <= todayKey) return;

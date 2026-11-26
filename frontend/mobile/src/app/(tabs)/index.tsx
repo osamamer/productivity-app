@@ -1,3 +1,4 @@
+import { isNormalCalendarEvent } from '../../../../shared/calendarEventKind';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, unstable_batchedUpdates, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -311,9 +312,9 @@ function reorderTaskIdsForCompletionChanges(
 export default function TodayScreen() {
   const { colors } = useAppTheme();
   const { confirm, showError } = useAppPopup();
-  const resource = useAsyncData<TodayData>(async () => ({ day: await api.day.today() }));
-  const eventsResource = useAsyncData<CalendarEvent[]>(() => api.events.all());
-  const calendarsResource = useAsyncData<Calendar[]>(() => api.calendars.all());
+  const resource = useAsyncData<TodayData>(async () => ({ day: await api.day.today() }), `day:${localDate()}`);
+  const eventsResource = useAsyncData<CalendarEvent[]>(() => api.events.all(), 'events');
+  const calendarsResource = useAsyncData<Calendar[]>(() => api.calendars.all(), 'calendars');
   const snapshotResource = useAsyncData<TodaySnapshot>(loadTodaySnapshot);
   const { reload: reloadEvents } = eventsResource;
   const { reload: reloadCalendars } = calendarsResource;
@@ -816,6 +817,7 @@ export default function TodayScreen() {
     end.setDate(end.getDate() + 1);
     const today = localDate(start);
     return (eventsResource.data ?? [])
+      .filter(isNormalCalendarEvent)
       .flatMap(event => expandCalendarEvent(event, start, end)
         .filter(occurrence => datesCoveredByOccurrence(occurrence).includes(today))
         .map(occurrence => ({ event, occurrence })))

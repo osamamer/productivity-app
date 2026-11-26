@@ -116,8 +116,8 @@ export default function NoteEditorScreen() {
   const { id, focus } = useLocalSearchParams<{ id: string; focus?: string }>();
   const noteId = Array.isArray(id) ? id[0] : id;
   const focusTarget = Array.isArray(focus) ? focus[0] : focus;
-  const resource = useAsyncData<Note>(() => api.notes.get(noteId));
-  const categoriesResource = useAsyncData<NoteCategory[]>(() => api.notes.categories());
+  const resource = useAsyncData<Note>(() => api.notes.get(noteId), `note:${noteId}`);
+  const categoriesResource = useAsyncData<NoteCategory[]>(() => api.notes.categories(), 'note-categories');
   const { setData } = resource;
   const categories = categoriesResource.data ?? [];
   const [title, setTitle] = useState('');

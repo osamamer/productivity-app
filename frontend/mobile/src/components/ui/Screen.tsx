@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useFocusEffect } from 'expo-router';
-import { PropsWithChildren, ReactNode, useCallback, useState } from 'react';
-import { Animated, Easing, RefreshControl, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { router } from 'expo-router';
+import { PropsWithChildren, ReactNode } from 'react';
+import { RefreshControl, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '@/providers/ThemeProvider';
@@ -35,28 +35,6 @@ export function Screen({
   scrollToTopKey = null,
 }: PropsWithChildren<Props>) {
   const { colors } = useAppTheme();
-  const [entryOpacity] = useState(() => new Animated.Value(1));
-  const [entryOffset] = useState(() => new Animated.Value(0));
-  useFocusEffect(useCallback(() => {
-    entryOpacity.setValue(0.97);
-    entryOffset.setValue(3);
-    const animation = Animated.parallel([
-      Animated.timing(entryOpacity, {
-        toValue: 1,
-        duration: 150,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-      Animated.timing(entryOffset, {
-        toValue: 0,
-        duration: 180,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
-    ]);
-    animation.start();
-    return () => animation.stop();
-  }, [entryOffset, entryOpacity]));
   const body = (
     <View style={[styles.content, contentStyle]}>
       {(back || action) && (
@@ -79,7 +57,7 @@ export function Screen({
   );
 
   return (
-    <Animated.View style={[styles.safe, { opacity: entryOpacity, transform: [{ translateY: entryOffset }] }]}>
+    <View style={styles.safe}>
       <SafeAreaView edges={safeAreaTop ? ['top'] : []} style={[styles.safe, { backgroundColor: colors.background }]}>
         {scroll ? (
           <KeyboardAwareScrollView
@@ -92,7 +70,7 @@ export function Screen({
         ) : <KeyboardAwareView>{body}</KeyboardAwareView>}
         {overlay}
       </SafeAreaView>
-    </Animated.View>
+    </View>
   );
 }
 

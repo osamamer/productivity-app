@@ -30,7 +30,7 @@ const signalGroups: { label: string; signals: { key: keyof MentalStateSignals; l
   {
     label: 'Attention',
     signals: [
-      { key: 'stimulationHunger', label: 'Stimulation hunger' },
+      { key: 'stimulationHunger', label: 'Stimulation Hunger' },
       { key: 'clarity', label: 'Clarity' },
     ],
   },
@@ -38,7 +38,7 @@ const signalGroups: { label: string; signals: { key: keyof MentalStateSignals; l
     label: 'Emotions',
     signals: [
       { key: 'valence', label: 'Emotional tone' },
-      { key: 'emotionalLoad', label: 'Emotional load' },
+      { key: 'emotionalLoad', label: 'Emotional Load' },
     ],
   },
 ];
@@ -152,7 +152,7 @@ function MentalStateResultCard({ checkIn, selected, isCurrent, isMostRecent, onC
 
 export default function MentalStateScreen() {
   const { colors } = useAppTheme();
-  const resource = useAsyncData(() => api.mentalState.history());
+  const resource = useAsyncData(() => api.mentalState.history(), 'mental-state');
   const [values, setValues] = useState<MentalStateSignals>({ energy: 5, activation: 5, stimulationHunger: 5, clarity: 5, valence: 5, emotionalLoad: 5 });
   const [goal, setGoal] = useState<MentalStateGoal | null>(null);
   const [result, setResult] = useState<MentalStateCheckIn | null>(null);

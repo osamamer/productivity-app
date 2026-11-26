@@ -1,6 +1,7 @@
 import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
+import { keepUnchanged } from '../../../shared/keepUnchanged';
 import { displayDayDate, localDate, nextDisplayDayBoundary, taskDateBucket } from '@/lib/date';
 import { reportError } from '@/lib/errors';
 import { animateLayout } from '@/lib/motion';
@@ -156,9 +157,8 @@ export function TaskWorkspaceProvider({ children }: PropsWithChildren) {
           appendUniqueTasks(appendUniqueTasks(appendUniqueTasks(today, calendarToday), future), past),
           undated,
         );
-        animateLayout();
-        setAllTasks(tasks);
-        if (taskGroups) setGroups(usableGroups(taskGroups, tasks));
+        setAllTasks(current => keepUnchanged(current, tasks));
+        if (taskGroups) setGroups(current => keepUnchanged(current, usableGroups(taskGroups, tasks)));
         futureOffsetRef.current = future.length;
         pastOffsetRef.current = past.length;
         setHasMoreFutureTasks(future.length === TASK_PAGE_BATCH_SIZE && futureProbe.length > 0);

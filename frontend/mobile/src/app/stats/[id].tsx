@@ -117,7 +117,7 @@ export default function StatDetailScreen() {
       subStatDefinitions: definitions.filter(item => item.parentDefinitionId === definition.id),
       todayEntries,
     };
-  });
+  }, `stat:${statId}:${localDate()}`);
   const [dateRange, setDateRange] = useState<DateRangeKey>('30-days');
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [entries, setEntries] = useState<StatEntry[]>([]);

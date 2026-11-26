@@ -14,6 +14,7 @@ import {
 } from 'react';
 
 import { appConfig, keycloakIssuer } from '@/lib/config';
+import { clearPageCache } from '@/lib/pageCache';
 import { clearTaskDetailsCache } from '@/lib/taskDetailsCache';
 import {
   CONNECTION_ERROR_MESSAGE,
@@ -114,6 +115,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     tokenRef.current = null;
     setUser(null);
     clearTaskDetailsCache();
+    clearPageCache();
     const results = await Promise.allSettled([
       SecureStore.deleteItemAsync(STORAGE_KEY),
       SecureStore.deleteItemAsync(USER_STORAGE_KEY),

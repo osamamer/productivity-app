@@ -1,12 +1,18 @@
+import { useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
+
+import { featureDescriptions } from '../../../../shared/featureDescriptions';
+import { warmMentalPages } from '@/services/pageResources';
 import { FeatureLinkCard } from '@/components/ui/FeatureLinkCard';
 import { Screen } from '@/components/ui/Screen';
 
 export default function MindScreen() {
+  useFocusEffect(useCallback(() => { warmMentalPages(); }, []));
   return (
     <Screen contentStyle={{ paddingTop: 12 }}>
-      <FeatureLinkCard title="Mental threads" description="Name what’s taking up space and choose its next state." icon="git-branch-outline" href="/mental-threads" />
-      <FeatureLinkCard title="Mental state" description="Check six signals and get grounded suggestions." icon="pulse-outline" href="/mental-state" />
-      <FeatureLinkCard title="Meditation" description="Settle into a timed session that stays in sync." icon="leaf-outline" href="/meditation" />
+      <FeatureLinkCard title="Mental threads" description={featureDescriptions.mentalThreads} icon="git-branch-outline" href="/mental-threads" />
+      <FeatureLinkCard title="Mental state" description={featureDescriptions.mentalState} icon="pulse-outline" href="/mental-state" />
+      <FeatureLinkCard title="Meditation" description={featureDescriptions.meditation} icon="leaf-outline" href="/meditation" />
     </Screen>
   );
 }
