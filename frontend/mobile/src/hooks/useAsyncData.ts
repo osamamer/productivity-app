@@ -5,7 +5,7 @@ import { keepUnchanged } from '../../../shared/keepUnchanged';
 import { GENERIC_ERROR_MESSAGE } from '@/lib/errors';
 import { loadPage, readPage, writePage } from '@/lib/pageCache';
 
-export function useAsyncData<T>(loader: () => Promise<T>, cacheKey?: string) {
+export function useAsyncData<T>(loader: () => Promise<T>, cacheKey?: string, revalidateOnFocus = false) {
   const cached = cacheKey ? readPage<T>(cacheKey) : undefined;
   const [data, updateData] = useState<T | null>(() => cached ? cached.value : null);
   const dataRef = useRef<T | null>(cached ? cached.value : null);
@@ -72,12 +72,13 @@ export function useAsyncData<T>(loader: () => Promise<T>, cacheKey?: string) {
       dataRef.current = snapshot.value;
       updateData(snapshot.value);
       setLoading(false);
+      if (revalidateOnFocus) void load(false, true);
     } else {
       // Keep already visible content during revalidation after a write or expiry.
       void load();
     }
     return () => { requestVersion.current += 1; };
-  }, [cacheKey, dataKey, load]));
+  }, [cacheKey, dataKey, load, revalidateOnFocus]));
 
   return {
     data: dataKey === cacheKey ? data : cached?.value ?? null,

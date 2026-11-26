@@ -1,28 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { formatLongDate, localDate } from '@/lib/date';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import type { StatDefinition, StatEntry, StatSummary } from '@/types/models';
+import { useAsyncData } from '@/hooks/useAsyncData';
+import { loadMeditationStats, meditationStatsRange } from '@/services/meditationResources';
 import { AppText } from '../ui/AppText';
 import { Card } from '../ui/Card';
 import { SilentPressable } from '../ui/SilentPressable';
-
-const MEDITATED_SYSTEM_KEY = 'meditated';
-const MEDITATION_MINUTES_SYSTEM_KEY = 'meditation_minutes';
-
-interface MeditationStatsData {
-  meditatedSummary: StatSummary;
-  minutesSummary: StatSummary;
-  meditatedEntries: StatEntry[];
-}
-
-function monthStart(offset: number): Date {
-  const today = new Date();
-  return new Date(today.getFullYear(), today.getMonth() + offset, 1);
-}
 
 function monthEnd(month: Date): Date {
   return new Date(month.getFullYear(), month.getMonth() + 1, 0);
@@ -50,10 +37,6 @@ function formatMinutes(value: number): string {
   return minutes === 0 ? `${hours} hr` : `${hours} hr ${minutes} min`;
 }
 
-function findSystemDefinition(definitions: StatDefinition[], systemKey: string): StatDefinition | undefined {
-  return definitions.find(definition => definition.systemKey === systemKey);
-}
-
 export function MeditationStats({ refreshKey, compact = false, onViewCalendar }: {
   refreshKey: number;
   compact?: boolean;
@@ -61,49 +44,17 @@ export function MeditationStats({ refreshKey, compact = false, onViewCalendar }:
 }) {
   const { colors } = useAppTheme();
   const [monthOffset, setMonthOffset] = useState(0);
-  const [data, setData] = useState<MeditationStatsData | null>(null);
-  const month = useMemo(() => monthStart(monthOffset), [monthOffset]);
+  const { from, to, key } = meditationStatsRange(monthOffset);
+  const month = useMemo(() => new Date(`${from}T00:00:00`), [from]);
   const monthDays = useMemo(() => daysInMonth(month), [month]);
-  const from = localDate(month);
-  const to = localDate(monthOffset === 0 ? new Date() : monthEnd(month));
-  const requestKey = `${from}:${to}:${refreshKey}`;
-  const [completedRequestKey, setCompletedRequestKey] = useState<string | null>(null);
-  const [errorRequestKey, setErrorRequestKey] = useState<string | null>(null);
-  const loading = completedRequestKey !== requestKey && errorRequestKey !== requestKey;
-  const error = errorRequestKey === requestKey;
-
+  const resource = useAsyncData(() => loadMeditationStats(from, to, api.stats), key);
+  const { data, loading, error, revalidate } = resource;
+  const lastRefreshKey = useRef(refreshKey);
   useEffect(() => {
-    let active = true;
-    api.stats.definitions()
-      .then(definitions => {
-        const meditated = findSystemDefinition(definitions, MEDITATED_SYSTEM_KEY);
-        const minutes = findSystemDefinition(definitions, MEDITATION_MINUTES_SYSTEM_KEY);
-        if (!meditated || !minutes) throw new Error('Meditation statistics are unavailable.');
-        return Promise.all([
-          api.stats.summary(meditated.id, from, to),
-          api.stats.summary(minutes.id, from, to),
-          api.stats.entries(meditated.id, from, to),
-        ] as const);
-      })
-      .then(([meditatedSummary, minutesSummary, meditatedEntries]) => {
-        if (active) {
-          setData({ meditatedSummary, minutesSummary, meditatedEntries });
-          setErrorRequestKey(null);
-          setCompletedRequestKey(requestKey);
-        }
-      })
-      .catch(cause => {
-        console.error('Could not load meditation history:', cause);
-        if (active) {
-          setErrorRequestKey(requestKey);
-          setCompletedRequestKey(requestKey);
-        }
-      })
-      .finally(() => {
-        if (active) setCompletedRequestKey(requestKey);
-      });
-    return () => { active = false; };
-  }, [from, month, monthOffset, refreshKey, requestKey, to]);
+    if (lastRefreshKey.current === refreshKey) return;
+    lastRefreshKey.current = refreshKey;
+    void revalidate();
+  }, [refreshKey, revalidate]);
 
   const practicedDates = useMemo(
     () => new Set((data?.meditatedEntries ?? []).filter(entry => entry.value === 1).map(entry => entry.date)),

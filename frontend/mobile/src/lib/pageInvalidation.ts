@@ -15,7 +15,7 @@ export function pageInvalidationPrefixes(path: string): readonly string[] {
     case 'task-series':
     case 'task-groups':
     case 'session': return ['stats:', 'stat:', 'mental-threads'];
-    case 'meditation': return ['stats:', 'stat:'];
+    case 'meditation': return ['stats:', 'stat:', 'meditation-active'];
     case 'notifications': return [];
     default: return [''];
   }

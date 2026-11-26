@@ -15,6 +15,8 @@ import { SilentPressable } from '@/components/ui/SilentPressable';
 import { ErrorView, LoadingView } from '@/components/ui/StateView';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { useMeditationAudio } from '@/hooks/useMeditationAudio';
+import { readPage, writePage } from '@/lib/pageCache';
+import { DEFAULT_MEDITATION_SETTINGS, loadMeditationSettings, meditationSettingsStorageKey, type MeditationSettings } from '@/services/meditationSettings';
 import { clock } from '@/lib/date';
 import { MEDITATION_SOUND_OPTIONS, type MeditationSoundId } from '@/lib/meditationAudio';
 import { reportError } from '@/lib/errors';
@@ -22,6 +24,7 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
+import { loadActiveMeditationSession } from '@/services/pageResources';
 import type { MeditationSession } from '@/types/models';
 
 const MIN_SESSION_MINUTES = 1;
@@ -31,34 +34,12 @@ const DURATION_VISIBLE_ITEMS = 5;
 const DURATION_CENTER_INDEX = Math.floor(DURATION_VISIBLE_ITEMS / 2);
 const MIN_MOOD = 1;
 const MAX_MOOD = 10;
-const MEDITATION_SETTINGS_STORAGE_KEY = 'meditation.settings';
-const LEGACY_SOUND_STORAGE_KEY = 'mobile.meditation.sound';
 const SOUND_ICONS: Record<MeditationSoundId, keyof typeof Ionicons.glyphMap> = {
   rain: 'rainy-outline',
   ocean: 'water-outline',
   forest: 'leaf-outline',
   bowls: 'musical-notes-outline',
 };
-
-interface MeditationSettings {
-  durationMinutes: number;
-  numIntervalBells: number;
-  selectedSound: MeditationSoundId;
-}
-
-const DEFAULT_MEDITATION_SETTINGS: MeditationSettings = {
-  durationMinutes: 10,
-  numIntervalBells: 2,
-  selectedSound: 'rain',
-};
-
-function meditationSettingsStorageKey(userId: string | undefined): string {
-  return `solife.${userId ?? 'signed-out'}.${MEDITATION_SETTINGS_STORAGE_KEY}`;
-}
-
-function isMeditationSound(value: unknown): value is MeditationSoundId {
-  return typeof value === 'string' && MEDITATION_SOUND_OPTIONS.some(option => option.id === value);
-}
 
 function durationInSeconds(value: MeditationSession['totalSessionTime']): number {
   if (typeof value === 'number') return Math.max(0, Math.floor(value));
@@ -300,16 +281,17 @@ export default function MeditationScreen() {
   const { user } = useAuth();
   const navigation = useNavigation();
   const { confirm } = useAppPopup();
-  const resource = useAsyncData<MeditationSession | undefined>(api.meditation.active);
+  const resource = useAsyncData<MeditationSession | undefined>(loadActiveMeditationSession, 'meditation-active', true);
   const setSessionData = resource.setData;
   const { start: startAudio, changeSound, previewSound, pause: pauseAudio, resume: resumeAudio, stop: stopAudio, setMuted, playerElement } = useMeditationAudio();
   const settingsStorageKey = meditationSettingsStorageKey(user?.id);
-  const [durationMinutes, setDurationMinutes] = useState(DEFAULT_MEDITATION_SETTINGS.durationMinutes);
+  const cachedSettings = readPage<MeditationSettings>(settingsStorageKey)?.value;
+  const [durationMinutes, setDurationMinutes] = useState(cachedSettings?.durationMinutes ?? DEFAULT_MEDITATION_SETTINGS.durationMinutes);
   const [moodBefore, setMoodBefore] = useState(5);
   const [moodAfter, setMoodAfter] = useState(5);
   const [recordedDuration, setRecordedDuration] = useState<'elapsed' | 'intended'>('elapsed');
-  const [numIntervalBells, setNumIntervalBells] = useState(DEFAULT_MEDITATION_SETTINGS.numIntervalBells);
-  const [selectedSound, setSelectedSound] = useState<MeditationSoundId>(DEFAULT_MEDITATION_SETTINGS.selectedSound);
+  const [numIntervalBells, setNumIntervalBells] = useState(cachedSettings?.numIntervalBells ?? DEFAULT_MEDITATION_SETTINGS.numIntervalBells);
+  const [selectedSound, setSelectedSound] = useState<MeditationSoundId>(cachedSettings?.selectedSound ?? DEFAULT_MEDITATION_SETTINGS.selectedSound);
   const [soundMuted, setSoundMuted] = useState(false);
   const [clientRunningAnchor, setClientRunningAnchor] = useState<ClientRunningAnchor | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -326,9 +308,9 @@ export default function MeditationScreen() {
   const leavePromptOpenRef = useRef(false);
   const leavingRef = useRef(false);
   const mountedRef = useRef(true);
-  const [activeOpacity] = useState(() => new Animated.Value(0));
-  const [activeScale] = useState(() => new Animated.Value(0.94));
-  const [activeOffset] = useState(() => new Animated.Value(24));
+  const [activeOpacity] = useState(() => new Animated.Value(resource.data ? 1 : 0));
+  const [activeScale] = useState(() => new Animated.Value(resource.data ? 1 : 0.94));
+  const [activeOffset] = useState(() => new Animated.Value(resource.data ? 0 : 24));
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1_000);
@@ -342,27 +324,12 @@ export default function MeditationScreen() {
 
   useEffect(() => {
     let active = true;
-    void AsyncStorage.getItem(settingsStorageKey).then(async stored => {
+    void loadMeditationSettings(settingsStorageKey).then(settings => {
       if (!active) return;
-
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored) as Partial<MeditationSettings>;
-          setDurationMinutes(typeof parsed.durationMinutes === 'number' && parsed.durationMinutes >= MIN_SESSION_MINUTES && parsed.durationMinutes <= MAX_SESSION_MINUTES
-            ? Math.floor(parsed.durationMinutes)
-            : DEFAULT_MEDITATION_SETTINGS.durationMinutes);
-          setNumIntervalBells(typeof parsed.numIntervalBells === 'number' && Number.isInteger(parsed.numIntervalBells) && parsed.numIntervalBells >= 0 && parsed.numIntervalBells <= 10
-            ? parsed.numIntervalBells
-            : DEFAULT_MEDITATION_SETTINGS.numIntervalBells);
-          setSelectedSound(isMeditationSound(parsed.selectedSound) ? parsed.selectedSound : DEFAULT_MEDITATION_SETTINGS.selectedSound);
-        } catch (cause) {
-          console.warn('Could not parse mobile meditation preferences:', cause);
-        }
-      } else {
-        const legacySound = await AsyncStorage.getItem(LEGACY_SOUND_STORAGE_KEY);
-        if (active && isMeditationSound(legacySound)) setSelectedSound(legacySound);
-      }
-      if (active) setLoadedSettingsKey(settingsStorageKey);
+      setDurationMinutes(settings.durationMinutes);
+      setNumIntervalBells(settings.numIntervalBells);
+      setSelectedSound(settings.selectedSound);
+      setLoadedSettingsKey(settingsStorageKey);
     }).catch(cause => console.warn('Could not restore mobile meditation preferences:', cause));
 
     return () => { active = false; };
@@ -370,7 +337,9 @@ export default function MeditationScreen() {
 
   useEffect(() => {
     if (loadedSettingsKey !== settingsStorageKey) return;
-    void AsyncStorage.setItem(settingsStorageKey, JSON.stringify({ durationMinutes, numIntervalBells, selectedSound })).catch(cause => {
+    const settings = { durationMinutes, numIntervalBells, selectedSound };
+    writePage(settingsStorageKey, settings);
+    void AsyncStorage.setItem(settingsStorageKey, JSON.stringify(settings)).catch(cause => {
       console.warn('Could not save mobile meditation preferences:', cause);
     });
   }, [durationMinutes, loadedSettingsKey, numIntervalBells, selectedSound, settingsStorageKey]);
@@ -455,7 +424,6 @@ export default function MeditationScreen() {
   }, [clearLocalSession, setSessionData]);
 
   useFocusEffect(useCallback(() => {
-    void syncActiveSession();
     const interval = setInterval(() => void syncActiveSession(), 15_000);
     const appStateSubscription = AppState.addEventListener('change', state => {
       if (state === 'active') void syncActiveSession();
@@ -468,6 +436,13 @@ export default function MeditationScreen() {
 
   useEffect(() => {
     if (!sessionId) return;
+    // Restored sessions and server reconciliation should already be fully visible.
+    if (!sessionId.startsWith('optimistic-meditation-')) {
+      activeOpacity.setValue(1);
+      activeScale.setValue(1);
+      activeOffset.setValue(0);
+      return;
+    }
     activeOpacity.setValue(0);
     activeScale.setValue(0.94);
     activeOffset.setValue(24);
