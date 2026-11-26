@@ -108,9 +108,10 @@ wait_for_other_installer() {
 
 # The app's main process: started from the binary, but neither one of its --type= helpers nor a
 # script it runs as plain Node (ELECTRON_RUN_AS_NODE), such as the Firefox native messaging host.
+# Only this user's: other accounts on the computer may run their own Claritard.
 app_pid() {
     local pid
-    for pid in $(pgrep -f "^$APP_BINARY( |$)"); do
+    for pid in $(pgrep -u "$(id -u)" -f "^$APP_BINARY( |$)"); do
         tr '\0' '\n' < "/proc/$pid/cmdline" 2>/dev/null | grep -q -- '^--type=' && continue
         tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | grep -q '^ELECTRON_RUN_AS_NODE=' && continue
         echo "$pid"
