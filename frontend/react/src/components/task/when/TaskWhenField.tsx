@@ -3,6 +3,8 @@ import { Box, Button, Checkbox, FormControlLabel, Popover, Stack, Tab, Tabs, Typ
 import CalendarTodayRoundedIcon from '@mui/icons-material/CalendarTodayRounded';
 import RepeatRoundedIcon from '@mui/icons-material/RepeatRounded';
 import NotificationsNoneRoundedIcon from '@mui/icons-material/NotificationsNoneRounded';
+import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined';
+import { alpha } from '@mui/material/styles';
 import { addDays, format } from 'date-fns';
 import { AppDateField, AppTimeField } from '../../input/AppPickerFields';
 import { repeatSummary } from '../../../../../shared/repeatRule.ts';
@@ -32,14 +34,28 @@ type Props = {
 };
 
 const SEGMENT_SX = {
+    position: 'relative',
     display: 'flex',
     alignItems: 'center',
-    gap: 0.75,
-    px: 1.25,
+    gap: 1,
+    px: 2,
     minWidth: 0,
     whiteSpace: 'nowrap',
-    '& + &': { borderLeft: 1, borderColor: 'divider' },
     '& svg': { fontSize: 18, color: 'text.secondary', flexShrink: 0 },
+} as const;
+
+// A short centred line between segments, rather than a full-height border.
+const SEPARATED_SX = {
+    '&::before': {
+        content: '""',
+        position: 'absolute',
+        left: 0,
+        top: '50%',
+        height: 18,
+        transform: 'translateY(-50%)',
+        borderLeft: 1,
+        borderColor: 'divider',
+    },
 } as const;
 
 function dayKey(offset: number): string {
@@ -101,32 +117,35 @@ export function TaskWhenField({ value, repeating, canRepeat, showRepeatSubtasks,
                 disabled={disabled}
                 onClick={() => openPopup('when')}
                 aria-label={`When: ${scheduleLabel(value)}, ${repeatSummary(value.repeat)}, ${reminderLabel(value.reminderMinutesBefore)}`}
-                sx={{
+                sx={theme => ({
                     containerType: 'inline-size',
                     display: 'flex',
                     alignItems: 'center',
                     width: '100%',
-                    height: 44,
-                    px: 0.5,
-                    border: 1,
-                    borderColor: 'divider',
-                    borderRadius: 2,
-                    bgcolor: 'background.paper',
+                    height: 40,
+                    p: 0,
+                    // Same outline as the other outlined fields in task details, with no fill of its own.
+                    border: `1px solid ${alpha(theme.palette.text.primary, 0.23)}`,
+                    borderRadius: `${theme.shape.borderRadius}px`,
+                    bgcolor: 'transparent',
                     color: 'text.primary',
                     font: 'inherit',
-                    fontSize: '0.9rem',
+                    fontSize: '0.95rem',
                     textAlign: 'left',
                     cursor: disabled ? 'default' : 'pointer',
                     opacity: disabled ? 0.6 : 1,
                     overflow: 'hidden',
-                    '&:hover': disabled ? undefined : { borderColor: 'text.secondary' },
+                    '&:hover': disabled ? undefined : { borderColor: theme.palette.text.primary },
+                    '&:focus-visible': { outline: 'none', borderColor: theme.palette.primary.main, boxShadow: `inset 0 0 0 1px ${theme.palette.primary.main}` },
                     '& .when-short': { display: 'none' },
-                    '@container (max-width: 440px)': {
+                    '@container (max-width: 400px)': {
                         '& .when-full': { display: 'none' },
                         '& .when-short': { display: 'inline' },
+                    },
+                    '@container (max-width: 300px)': {
                         '& .when-reminder-text': { display: 'none' },
                     },
-                }}
+                })}
             >
                 <Box sx={{ ...SEGMENT_SX, flexShrink: 0 }}>
                     <CalendarTodayRoundedIcon />
@@ -135,7 +154,7 @@ export function TaskWhenField({ value, repeating, canRepeat, showRepeatSubtasks,
                     </Box>
                 </Box>
                 {canRepeat && (
-                    <Box sx={{ ...SEGMENT_SX, flex: 1 }}>
+                    <Box sx={{ ...SEGMENT_SX, ...SEPARATED_SX, flex: 1 }}>
                         <RepeatRoundedIcon />
                         <Box
                             component="span"
@@ -146,8 +165,18 @@ export function TaskWhenField({ value, repeating, canRepeat, showRepeatSubtasks,
                         </Box>
                     </Box>
                 )}
-                <Box sx={{ ...SEGMENT_SX, flexShrink: 0, ...(canRepeat ? {} : { flex: 1 }) }}>
-                    <NotificationsNoneRoundedIcon sx={value.reminderMinutesBefore !== null ? { color: 'primary.main !important' } : undefined} />
+                <Box
+                    sx={{
+                        ...SEGMENT_SX,
+                        ...SEPARATED_SX,
+                        flexShrink: 0,
+                        ...(canRepeat ? {} : { flex: 1 }),
+                        ...(value.reminderMinutesBefore !== null ? { '& svg': { fontSize: 18, flexShrink: 0, color: 'primary.main' } } : {}),
+                    }}
+                >
+                    {value.reminderMinutesBefore === null
+                        ? <NotificationsNoneRoundedIcon />
+                        : <NotificationsActiveOutlinedIcon />}
                     <Box
                         component="span"
                         className="when-reminder-text"
