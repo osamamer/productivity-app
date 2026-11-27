@@ -544,7 +544,11 @@ export const taskService = {
         const completionFilter = completed === undefined ? 'all' : String(completed);
         const now = new Date();
         const calendarDate = dateKey(now);
-        const displayDate = dateKey(getHomeDisplayDate(now, getRuntimeUserPreference('homeDayEndHour')));
+        const dayEndHour = getRuntimeUserPreference('homeDayEndHour');
+        const displayDate = dateKey(getHomeDisplayDate(now, dayEndHour));
+        // After midnight this is the calendar date; before it, the next morning's hours that still
+        // belong to Today, so Today matches Home even when the Coming up batch stops short of them.
+        const tailDate = homeDayTailDateKey(displayDate, dayEndHour);
         const cacheKey = `${getAuthCacheScope()}:task-page-initial:${calendarDate}:${displayDate}:${completionFilter}:${batchSize}`;
         if (forceRefresh) {
             taskPageInitialCache.invalidate(cacheKey);
@@ -555,9 +559,9 @@ export const taskService = {
         const snapshot = await taskPageInitialCache.get(cacheKey, async () => {
             const [today, calendarToday, future, past, undated] = await Promise.all([
                 fetchTaskPageTasks(new URLSearchParams({ date: displayDate }), 'Failed to fetch display-day tasks'),
-                displayDate === calendarDate
-                    ? Promise.resolve([] as Task[])
-                    : fetchTaskPageTasks(new URLSearchParams({ date: calendarDate }), 'Failed to fetch calendar-day tasks'),
+                tailDate
+                    ? fetchTaskPageTasks(new URLSearchParams({ date: tailDate }), 'Failed to fetch calendar-day tasks')
+                    : Promise.resolve([] as Task[]),
                 fetchTaskPeriod('FUTURE', batchSize + 1, 0, completed),
                 fetchTaskPeriod('PAST', batchSize + 1, 0, completed),
                 fetchUndatedTasks(completed),

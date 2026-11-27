@@ -55,7 +55,7 @@ function StatusRow({ row }: { row: BoundaryStatusRow }) {
                 {row.key.startsWith('site:') ? <LanguageRoundedIcon fontSize="small" /> : row.name.slice(0, 1)}
             </Avatar>
             <Typography fontWeight={600} noWrap>{row.name}</Typography>
-            <Box sx={{ gridColumn: { xs: '2', md: 'auto' }, minWidth: 0 }}>
+            <Box sx={{ gridColumn: { xs: '2', md: 'auto' }, minWidth: 0, mr: { md: 2 } }}>
                 {row.daily ? (
                     <>
                         <Typography variant="body2" color="text.secondary" noWrap>

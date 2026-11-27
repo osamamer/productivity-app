@@ -30,7 +30,6 @@ type SmartTaskInputProps = {
     onSubmit: (taskToCreate: TaskToCreate) => void;
     initialDate?: string;
     defaultToToday?: boolean;
-    defaultDate?: string;
     autoFocus?: boolean;
     parentId?: string;
     placeholder?: string;
@@ -73,7 +72,6 @@ export function SmartTaskInput({
     onSubmit,
     initialDate,
     defaultToToday = false,
-    defaultDate,
     autoFocus,
     parentId,
     placeholder,
@@ -108,9 +106,9 @@ export function SmartTaskInput({
     const [selectedTime, setSelectedTime] = useState<Date | null>(new Date());
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const todayDateTime = () => dateAtCurrentTime(
-        defaultDate ? new Date(`${defaultDate}T00:00:00`) : new Date(),
-    );
+    // Today is the calendar date even before the day-end hour; such a task shows on Home only if it
+    // falls before that hour (see isInHomeDay).
+    const todayDateTime = () => dateAtCurrentTime(new Date());
 
     useEffect(() => {
         if (autoFocus && inputRef.current) {

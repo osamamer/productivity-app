@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
-import { ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { AppState, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { CalendarDayActionSheet, type CalendarCreateTab } from '@/components/calendar/CalendarDayActionSheet';
 import { CalendarStatCheckInSheet } from '@/components/calendar/CalendarStatCheckInSheet';
@@ -197,6 +197,7 @@ export function MonthCalendar({
   onTaskFutureOccurrencesDeleted,
   displayOptionsOpen,
   onDisplayOptionsOpenChange,
+  dateRequest,
 }: {
   tasks: Task[];
   groups: TaskGroup[];
@@ -221,9 +222,13 @@ export function MonthCalendar({
   onTaskFutureOccurrencesDeleted: (taskId: string) => Promise<void>;
   displayOptionsOpen: boolean;
   onDisplayOptionsOpenChange: (open: boolean) => void;
+  /** `YYYY-MM-DD|nonce`: shows that day whenever it changes, e.g. when Home opens the calendar. */
+  dateRequest?: string;
 }) {
   const { colors } = useAppTheme();
   const [calendarDate, setCalendarDate] = useState(() => new Date());
+  useShowRequestedDate(dateRequest, setCalendarDate);
+  useFollowTodayAcrossMidnight(calendarDate, setCalendarDate);
   const [preferences, setPreferences] = useState<CalendarDisplayPreferences>(DEFAULT_DISPLAY_PREFERENCES);
   const preferencesRef = useRef(preferences);
   const preferencesLoadedRef = useRef(false);
@@ -799,3 +804,30 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.48 },
   pressed: { opacity: 0.7 },
 });
+
+function useShowRequestedDate(dateRequest: string | undefined, setCalendarDate: (date: Date) => void) {
+  useEffect(() => {
+    const requested = dateRequest?.split('|')[0];
+    if (!requested) return;
+    const date = new Date(`${requested}T12:00:00`);
+    if (!Number.isNaN(date.getTime())) setCalendarDate(date);
+  }, [dateRequest, setCalendarDate]);
+}
+
+/** The tab stays mounted for days; a calendar left on today moves to the new today when the app returns. */
+function useFollowTodayAcrossMidnight(calendarDate: Date, setCalendarDate: (date: Date) => void) {
+  const todayRef = useRef(localDate());
+  const shownRef = useRef(localDate(calendarDate));
+  useEffect(() => {
+    shownRef.current = localDate(calendarDate);
+  }, [calendarDate]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state !== 'active') return;
+      const today = localDate();
+      if (today !== todayRef.current && shownRef.current === todayRef.current) setCalendarDate(new Date());
+      todayRef.current = today;
+    });
+    return () => subscription.remove();
+  }, [setCalendarDate]);
+}

@@ -7,8 +7,7 @@ import { AppPopup } from '@/components/ui/AppPopup';
 import { AppText } from '@/components/ui/AppText';
 import { ChoiceChips } from '@/components/ui/ChoiceChips';
 import { ModalSheet } from '@/components/ui/ModalSheet';
-import { displayDayDate, localDateTime } from '@/lib/date';
-import { usePreferences } from '@/providers/PreferencesProvider';
+import { localDateTime } from '@/lib/date';
 import { reportError } from '@/lib/errors';
 import { TASK_PRIORITY_OPTIONS } from '@/lib/taskPriority';
 import { api } from '@/services/api';
@@ -19,8 +18,10 @@ import { TaskReminderField } from './TaskReminderField';
 
 type Schedule = 'none' | 'today' | 'tomorrow' | 'custom';
 
-function scheduledDate(choice: Exclude<Schedule, 'custom'>, dayEndHour: number): string {
-  const date = displayDayDate(new Date(), dayEndHour);
+// Today is the calendar date even before the day-end hour; a 09:00 task made after midnight shows
+// in Today only once the previous day has ended.
+function scheduledDate(choice: Exclude<Schedule, 'custom'>): string {
+  const date = new Date();
   if (choice === 'tomorrow') date.setDate(date.getDate() + 1);
   date.setHours(9, 0, 0, 0);
   return localDateTime(date);
@@ -42,7 +43,6 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, de
   calendarOptions?: Calendar[];
   initialCalendarId?: string;
 }) {
-  const { homeDayEndHour } = usePreferences();
   const [name, setName] = useState('');
   const [importance, setImportance] = useState<number>(TASK_PRIORITY_OPTIONS[0].value);
   const [schedule, setSchedule] = useState<Schedule>(initialDate ? 'custom' : defaultSchedule);
@@ -114,7 +114,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, de
         description: '',
         scheduledPerformDateTime: schedule === 'none'
           ? null
-          : schedule === 'custom' ? customSchedule : scheduledDate(schedule, homeDayEndHour),
+          : schedule === 'custom' ? customSchedule : scheduledDate(schedule),
         tag: '',
         importance,
         reminderMinutesBefore,
@@ -154,7 +154,7 @@ export function TaskComposerSheet({ visible, onClose, onCreated, initialDate, de
       {schedule !== 'none' && (
         <TaskReminderField
           value={reminderMinutesBefore}
-          scheduledDateTime={schedule === 'custom' ? customSchedule : scheduledDate(schedule, homeDayEndHour)}
+          scheduledDateTime={schedule === 'custom' ? customSchedule : scheduledDate(schedule)}
           onChange={setReminderMinutesBefore}
         />
       )}

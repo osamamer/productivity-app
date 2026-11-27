@@ -1998,7 +1998,7 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                                 </Box>
                             );
                         })}
-                        <Box component="form" onSubmit={handleCreateSubtask} sx={{ display: 'flex', alignItems: 'center' }}>
+                        <Box component="form" onSubmit={handleCreateSubtask} sx={{ display: 'flex', alignItems: 'center', minHeight: 42, py: 0.25, px: 0.5 }}>
                             <Checkbox size="small" disabled checked={false} sx={{ p: 0.75, mr: 1 }} />
                             <TextField
                                 name="home-subtask-name"

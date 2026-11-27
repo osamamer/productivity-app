@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Box, Chip, IconButton, MenuItem, Select, Tooltip, Typography } from '@mui/material';
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import PushPinRoundedIcon from '@mui/icons-material/PushPinRounded';
@@ -13,6 +13,7 @@ import type { DeltaStatic } from 'quill';
 import { format } from 'date-fns';
 import { alpha } from '@mui/material/styles';
 import { Note, NoteCategory } from '../../types/Note.ts';
+import { titleFontSize } from '../../../../shared/titleFontSize.ts';
 import './notesEditor.css';
 
 const editorModules = {
@@ -97,6 +98,30 @@ function getPastedLines(text: string): string[] {
 
 const WORD_COUNT_UPDATE_DELAY_MS = 600;
 
+function noteTitleFontSizes(title: string) {
+    const scale = { shrinkFrom: 28, shrinkTo: 120 };
+    return {
+        xs: `${titleFontSize(title, { ...scale, max: 2, min: 1.35 })}rem`,
+        md: `${titleFontSize(title, { ...scale, max: 2.55, min: 1.6 })}rem`,
+    };
+}
+
+/** Grows a one-row textarea to fit its wrapped text, including when its width changes. */
+function useAutoHeight(textarea: RefObject<HTMLTextAreaElement | null>, value: string) {
+    useLayoutEffect(() => {
+        const element = textarea.current;
+        if (!element) return undefined;
+        const fit = () => {
+            element.style.height = 'auto';
+            element.style.height = `${element.scrollHeight}px`;
+        };
+        fit();
+        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
+        observer?.observe(element);
+        return () => observer?.disconnect();
+    }, [textarea, value]);
+}
+
 function countWords(content: string) {
     const container = document.createElement('div');
     container.innerHTML = content;
@@ -125,7 +150,8 @@ function NoteDraftEditorView({
 }: NoteDraftEditorProps) {
     const [draftTitle, setDraftTitle] = useState(title);
     const [wordCount, setWordCount] = useState(() => countWords(content));
-    const titleRef = useRef<HTMLInputElement | null>(null);
+    const titleRef = useRef<HTMLTextAreaElement | null>(null);
+    useAutoHeight(titleRef, draftTitle);
     const quillRef = useRef<ReactQuill | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement | null>(null);
     const wordCountTimerRef = useRef<number | null>(null);
@@ -224,11 +250,12 @@ function NoteDraftEditorView({
         <Box ref={scrollContainerRef} className="notes-editor-scroll" sx={{ flex: 1, overflowY: 'auto' }}>
             <Box sx={{ maxWidth: 880, width: '100%', minHeight: '100%', mx: 'auto', px: { xs: 2.5, md: 5, xl: 7 }, pt: { xs: 3, md: 5 }, pb: 'clamp(180px, 28vh, 320px)' }}>
                 <Box
-                    component="input"
+                    component="textarea"
                     ref={titleRef}
+                    rows={1}
                     value={draftTitle}
                     onChange={event => {
-                        const nextTitle = event.target.value;
+                        const nextTitle = event.target.value.replace(/\s*\n\s*/g, ' ');
                         setDraftTitle(nextTitle);
                         queueDraftUpdate({ title: nextTitle });
                     }}
@@ -236,7 +263,7 @@ function NoteDraftEditorView({
                         if (!draftTitle.trim()) queueDraftUpdate({ title: '' });
                     }}
                     onKeyDown={event => {
-                        if (event.key === 'Tab' && !event.shiftKey) {
+                        if ((event.key === 'Tab' || event.key === 'Enter') && !event.shiftKey) {
                             event.preventDefault();
                             quillRef.current?.focus();
                         }
@@ -251,7 +278,11 @@ function NoteDraftEditorView({
                         outline: 0,
                         background: 'transparent',
                         color: 'text.primary',
-                        fontSize: { xs: '2rem', md: '2.55rem' },
+                        display: 'block',
+                        resize: 'none',
+                        overflow: 'hidden',
+                        fontFamily: 'inherit',
+                        fontSize: noteTitleFontSizes(draftTitle),
                         fontWeight: 700,
                         lineHeight: 1.15,
                         letterSpacing: '-0.035em',

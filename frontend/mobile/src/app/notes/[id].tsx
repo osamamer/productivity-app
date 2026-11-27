@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { titleFontSize } from '../../../../shared/titleFontSize';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
 import { AppPopup } from '@/components/ui/AppPopup';
@@ -19,6 +20,11 @@ import type { Note, NoteCategory } from '@/types/models';
 
 const AUTO_SAVE_DELAY = 650;
 const UNTITLED_TITLE = 'Untitled';
+
+function noteTitleSize(title: string) {
+  const fontSize = titleFontSize(title, { max: 20, min: 15, shrinkFrom: 24, shrinkTo: 90 });
+  return { fontSize, lineHeight: Math.round(fontSize * 1.3) };
+}
 
 type Draft = {
   title: string;
@@ -359,10 +365,13 @@ export default function NoteEditorScreen() {
         </SilentPressable>
         <AppInput
           value={editorReady ? title : resource.data?.title ?? ''}
-          onChangeText={changeTitle}
+          onChangeText={text => changeTitle(text.replace(/\s*\n\s*/g, ' '))}
           placeholder={editorReady ? "Add a title…" : ""}
           containerStyle={styles.titleContainer}
-          style={[styles.titleInput, { color: colors.text }]}
+          // Wraps to a few lines and shrinks, so a long title is never cut off at either end.
+          multiline
+          submitBehavior="blurAndSubmit"
+          style={[styles.titleInput, noteTitleSize(editorReady ? title : resource.data?.title ?? ''), { color: colors.text }]}
           editable={!editorDisabled} />
         <SilentPressable
           accessibilityRole="button"
@@ -435,7 +444,7 @@ const styles = StyleSheet.create({
   header: { minHeight: 58, paddingHorizontal: 14, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerButton: { width: 36, height: 42, alignItems: 'center', justifyContent: 'center' },
   titleContainer: { flex: 1, gap: 0 },
-  titleInput: { minHeight: 42, borderWidth: 0, borderColor: 'transparent', borderRadius: 0, paddingHorizontal: 0, paddingVertical: 8, fontSize: 20, lineHeight: 26, fontWeight: '700', backgroundColor: 'transparent' },
+  titleInput: { minHeight: 42, maxHeight: 96, borderWidth: 0, borderColor: 'transparent', borderRadius: 0, paddingHorizontal: 0, paddingVertical: 8, fontWeight: '700', backgroundColor: 'transparent', textAlignVertical: 'center' },
   workspace: { flex: 1 },
   bodyContainer: { flex: 1, gap: 0 },
   bodyInput: { flex: 1, minHeight: 0, borderWidth: 0, borderColor: 'transparent', borderRadius: 0, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 30, backgroundColor: 'transparent' },

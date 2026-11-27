@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 
 import { CalendarComposerSheet, CalendarManagementContent } from '@/components/calendar/CalendarControls';
@@ -17,6 +17,7 @@ import { api } from '@/services/api';
 import type { Calendar, CalendarEvent, Task } from '@/types/models';
 
 export default function CalendarScreen() {
+  const { date: requestedDate, at: requestedAt } = useLocalSearchParams<{ date?: string; at?: string }>();
   const [displayOptionsOpen, setDisplayOptionsOpen] = useState(false);
   const [calendarManagerOpen, setCalendarManagerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -273,7 +274,8 @@ export default function CalendarScreen() {
         onTaskOccurrenceDeleted={deleteTaskOccurrence}
         onTaskFutureOccurrencesDeleted={deleteTaskFutureOccurrences}
         displayOptionsOpen={displayOptionsOpen}
-        onDisplayOptionsOpenChange={setDisplayOptionsOpen} />
+        onDisplayOptionsOpenChange={setDisplayOptionsOpen}
+        dateRequest={requestedDate ? `${requestedDate}|${requestedAt ?? ''}` : undefined} />
       <ModalSheet
         visible={calendarManagerOpen}
         title="Calendars"

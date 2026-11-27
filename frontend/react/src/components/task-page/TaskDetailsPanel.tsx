@@ -239,6 +239,8 @@ const SubtaskComposer = React.memo(function SubtaskComposer({
                 display: 'flex',
                 alignItems: 'center',
                 minHeight: 38,
+                // Same inset as subtask rows, so the checkbox and text line up with theirs.
+                px: 0.5,
             }}
         >
             <Checkbox

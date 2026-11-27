@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
+import { titleFontSize } from '../../../../shared/titleFontSize';
 import { taskSeriesTimeUpdate } from '@/lib/taskSeriesTime';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
 import { reportError } from '@/lib/errors';
@@ -21,6 +22,11 @@ import { SilentPressable } from '../ui/SilentPressable';
 import { TaskScheduleField } from './TaskScheduleField';
 import { TaskReminderField } from './TaskReminderField';
 import { CalendarDestinationField } from '../calendar/CalendarControls';
+
+function titleSize(name: string) {
+  const fontSize = titleFontSize(name, { max: 22, min: 16, shrinkFrom: 40, shrinkTo: 140 });
+  return { fontSize, lineHeight: Math.round(fontSize * 1.28) };
+}
 
 export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeletedOccurrence, onDeletedFutureOccurrences, onSubtaskCreated, availableCalendars }: {
   task: Task | null;
@@ -462,8 +468,16 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
           ref={taskNameInputRef}
           containerStyle={styles.taskNameInput}
           value={name}
-          onChangeText={setName}
-          style={[styles.taskTitleInput, styles.taskNameDirection, completed && styles.completed]}
+          onChangeText={text => setName(text.replace(/\s*\n\s*/g, ' '))}
+          // Wrapping keeps the whole name visible: a one-line input scrolls to the caret and hides the start.
+          multiline
+          submitBehavior="blurAndSubmit"
+          style={[
+            styles.taskTitleInput,
+            styles.taskNameDirection,
+            titleSize(name),
+            completed && styles.completed,
+          ]}
           accessibilityLabel="Task name"
           autoFocus />
       </View>
@@ -624,7 +638,7 @@ const styles = StyleSheet.create({
   taskNameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   taskNameInput: { flex: 1, minWidth: 0 },
   taskNameDirection: { writingDirection: 'auto', textAlign: 'auto' },
-  taskTitleInput: { minHeight: 0, paddingHorizontal: 0, paddingVertical: 0, borderWidth: 0, borderRadius: 0, backgroundColor: 'transparent', fontSize: 22, fontWeight: '600', lineHeight: 28 },
+  taskTitleInput: { minHeight: 0, maxHeight: 132, paddingHorizontal: 0, paddingVertical: 0, borderWidth: 0, borderRadius: 0, backgroundColor: 'transparent', fontWeight: '600', textAlignVertical: 'top' },
   completeToggle: { width: 28, height: 30, alignItems: 'center', justifyContent: 'center' },
   subtasks: { gap: 8 },
   subtasksHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },

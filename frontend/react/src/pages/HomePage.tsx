@@ -3351,7 +3351,6 @@ function LaborHome({ modeSwitch }: { modeSwitch: ReactNode }) {
                     >
                         <SmartTaskInput
                             defaultToToday
-                            defaultDate={homeDisplayDayKey}
                             onSubmit={createTask}
                         />
                     </Box>

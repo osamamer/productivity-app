@@ -832,6 +832,11 @@ export default function TodayScreen() {
     [calendarsResource.data],
   );
 
+  function openTodayInCalendar() {
+    // The calendar tab stays mounted, so tell it which day to show; `at` makes a repeat press count.
+    router.push({ pathname: '/calendar', params: { date: displayDayKey, at: String(Date.now()) } });
+  }
+
   async function refreshToday() {
     setPullRefreshing(true);
     try {
@@ -1081,7 +1086,7 @@ export default function TodayScreen() {
             <Card style={[styles.flatCard, styles.eventsCard]}>
               <View style={styles.spaceBetween}>
                 <AppText variant="heading">Today’s events</AppText>
-                <AppButton compact variant="ghost" label="Calendar" icon="calendar-outline" onPress={() => router.push('/calendar')} />
+                <AppButton compact variant="ghost" label="Calendar" icon="calendar-outline" onPress={openTodayInCalendar} />
               </View>
               {eventsResource.loading && !eventsResource.data ? (
                 <AppText color="muted">Loading events…</AppText>
@@ -1096,7 +1101,7 @@ export default function TodayScreen() {
                       key={`${event.id}-${occurrence.occurrenceKey}`}
                       accessibilityRole="button"
                       accessibilityLabel={`${event.title}, ${occurrence.allDay ? 'all day' : formatCalendarTime(occurrence.start, event.timeZone)}`}
-                      onPress={() => router.push('/calendar')}
+                      onPress={openTodayInCalendar}
                       style={({ pressed }) => [styles.eventRow, pressed && styles.pressed]}>
                       <View style={[styles.eventDot, { backgroundColor: calendarColorHex(calendarsById.get(event.calendarId)?.color, colors.accent) }]} />
                       <View style={styles.eventCopy}>
