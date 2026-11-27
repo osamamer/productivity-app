@@ -14,7 +14,7 @@ import { TASK_ROW_INSET, TaskRow, type TaskDragLayout } from '@/components/tasks
 import { TaskSection } from '@/components/tasks/TaskSection';
 import { DraggableTaskGroup } from '@/components/tasks/DraggableTaskGroup';
 import { GroupChevron, GroupConnector } from '@/components/tasks/GroupChevron';
-import { Collapsible } from '@/components/ui/Collapsible';
+import { animateCollapse, Collapsible } from '@/components/ui/Collapsible';
 import { MentalStateBadge } from '@/components/mind/MentalStateBadge';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppText } from '@/components/ui/AppText';
@@ -395,6 +395,7 @@ export default function TodayScreen() {
   }
 
   function toggleGroup(groupId: string) {
+    animateCollapse();
     setCollapsedGroupIds(previous => {
       const next = new Set(previous);
       if (next.has(groupId)) next.delete(groupId);

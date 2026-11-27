@@ -10,7 +10,7 @@ import { TaskDetailSheet } from '@/components/tasks/TaskDetailSheet';
 import { TASK_ROW_INSET, TaskRow } from '@/components/tasks/TaskRow';
 import { TaskSection } from '@/components/tasks/TaskSection';
 import { GroupChevron, GroupConnector } from '@/components/tasks/GroupChevron';
-import { Collapsible } from '@/components/ui/Collapsible';
+import { animateCollapse, Collapsible } from '@/components/ui/Collapsible';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppText } from '@/components/ui/AppText';
 import { ChoiceChips } from '@/components/ui/ChoiceChips';
@@ -289,6 +289,7 @@ export default function TasksScreen() {
   }
 
   function toggleGroup(groupId: string) {
+    animateCollapse();
     setCollapsedGroupIds(previous => {
       const next = new Set(previous);
       if (next.has(groupId)) next.delete(groupId);
