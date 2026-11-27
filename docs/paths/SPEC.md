@@ -168,10 +168,15 @@ New package `org.osama.path`, following the usual entity / repository / service 
 | `POST/PATCH/DELETE /api/v1/projects/{id}/checkpoints` | Checkpoints. |
 | `GET /api/v1/paths/overview?from&to` | Everything the Paths page draws: per path, weekly strengths with per-input scores, the current week, milestones and checkpoints with progress, and pace projections. |
 | `GET /api/v1/paths/{id}` | The path page. |
+| `POST /api/v1/paths/signal-preview` | How an unsaved signal would have scored the last 8 weeks, for the editor. |
+| `PUT /api/v1/paths/order` | "My order": path ids in their new order. |
+| `PUT /api/v1/paths/view` | The page switches (sort, shape, edges), kept in their own `path_view_preference` table rather than the user preferences. |
+
+Read endpoints take `today`, the user's local date, so weeks follow their calendar. The path table is `life_path` (PostgreSQL has a built-in `path` type).
 
 Scoring is pure and unit-tested on its own: an input-scoring function (entries, input, week → score), a combining function (scores, method → strength) and a checkpoint-progress function. The overview service only loads entries and calls them.
 
-Liquibase changesets add `path`, `path_signal`, `path_signal_input`, `milestone` and `checkpoint`, plus `project.completed_at` and `task.checkpoint_id`. Indexes are named `idx_app_<table>_<column>` with `ifNotExists: true`.
+Liquibase changesets add `life_path`, `path_signal`, `path_signal_input`, `milestone` and `checkpoint`, plus `project.completed_at` and `task.checkpoint_id`. Indexes are named `idx_app_<table>_<column>` with `ifNotExists: true`.
 
 ## Frontend
 

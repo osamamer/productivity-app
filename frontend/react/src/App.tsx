@@ -34,6 +34,7 @@ const MentalThreadsPage = lazy(() => import('./pages/MentalThreadsPage').then(mo
 const MentalStatePage = lazy(() => import('./pages/MentalStatePage').then(module => ({ default: module.MentalStatePage })));
 const MentalPage = lazy(() => import('./pages/MentalPage').then(module => ({ default: module.MentalPage })));
 const DayPage = lazy(() => import('./pages/DayPage').then(module => ({ default: module.DayPage })));
+const PathsPage = lazy(() => import('./pages/PathsPage').then(module => ({ default: module.PathsPage })));
 const WellbeingPage = lazy(() => import('./pages/WellbeingPage').then(module => ({ default: module.WellbeingPage })));
 
 function DelayedRouteFallback() {
@@ -136,6 +137,8 @@ const routes = [
                     { path: "/tasks", element: <RouteSuspense><TaskPage/></RouteSuspense> },
                     // Keep old bookmarks from reopening the unfinished Projects UI.
                     { path: "/projects", element: <Navigate to="/tasks" replace /> },
+                    // One route for the page and, later, each path, so moving between them keeps the page mounted.
+                    { path: "/paths/*", element: <RouteSuspense><PathsPage/></RouteSuspense> },
                     { path: "/stats", element: <RouteSuspense><StatsPage/></RouteSuspense> },
                     { path: "/day/:date", element: <RouteSuspense><DayPage/></RouteSuspense> },
                     { path: "/notes", element: <RouteSuspense><NotesPage/></RouteSuspense> },

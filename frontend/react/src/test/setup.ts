@@ -33,6 +33,8 @@ window.matchMedia ??= ((query: string) => ({
 })) as typeof window.matchMedia;
 window.scrollTo = () => {};
 Element.prototype.scrollIntoView ??= function scrollIntoView() {};
+// jsdom's canvas only logs "not implemented"; drawings such as the Paths vortex skip a missing context.
+HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
 
 // The STOMP socket is a network boundary that MSW cannot serve; tests run without live pushes.
 vi.mock('../services/authenticatedStompClient', () => ({

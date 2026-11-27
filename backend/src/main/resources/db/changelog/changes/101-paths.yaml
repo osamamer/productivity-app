@@ -1,0 +1,60 @@
+databaseChangeLog:
+  - changeSet:
+      id: 101-paths
+      author: claude
+      changes:
+        - createTable:
+            tableName: life_path
+            columns:
+              - column: { name: path_id, type: varchar(255), constraints: { primaryKey: true, nullable: false } }
+              - column: { name: user_id, type: varchar(255), constraints: { nullable: false } }
+              - column: { name: name, type: varchar(60), constraints: { nullable: false } }
+              - column: { name: color, type: varchar(16), constraints: { nullable: false } }
+              - column: { name: icon, type: varchar(32), constraints: { nullable: false } }
+              - column: { name: display_order, type: int, defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: paused, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+              - column: { name: created_at, type: timestamp, constraints: { nullable: false } }
+              - column: { name: updated_at, type: timestamp, constraints: { nullable: false } }
+              - column: { name: soft_deleted, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+        - addForeignKeyConstraint: { baseTableName: life_path, baseColumnNames: user_id, referencedTableName: app_user, referencedColumnNames: id, constraintName: fk_app_life_path_user }
+        - createIndex:
+            tableName: life_path
+            indexName: idx_app_life_path_user
+            ifNotExists: true
+            columns:
+              - column: { name: user_id }
+        - createTable:
+            tableName: path_signal
+            columns:
+              - column: { name: signal_id, type: varchar(255), constraints: { primaryKey: true, nullable: false } }
+              - column: { name: path_id, type: varchar(255), constraints: { nullable: false, unique: true, uniqueConstraintName: uq_app_path_signal_path } }
+              - column: { name: combine_method, type: varchar(16), constraints: { nullable: false } }
+        - addForeignKeyConstraint: { baseTableName: path_signal, baseColumnNames: path_id, referencedTableName: life_path, referencedColumnNames: path_id, constraintName: fk_app_path_signal_path }
+        - createTable:
+            tableName: path_signal_input
+            columns:
+              - column: { name: input_id, type: varchar(255), constraints: { primaryKey: true, nullable: false } }
+              - column: { name: signal_id, type: varchar(255), constraints: { nullable: false } }
+              - column: { name: stat_definition_id, type: varchar(255), constraints: { nullable: false } }
+              - column: { name: value_source, type: varchar(16), constraints: { nullable: false } }
+              - column: { name: direction, type: varchar(16), constraints: { nullable: false } }
+              - column: { name: period, type: varchar(8), constraints: { nullable: false } }
+              - column: { name: target, type: double precision, constraints: { nullable: false } }
+              - column: { name: scoring, type: varchar(16), constraints: { nullable: false } }
+              - column: { name: weight, type: double precision, defaultValueNumeric: 1, constraints: { nullable: false } }
+              - column: { name: display_order, type: int, defaultValueNumeric: 0, constraints: { nullable: false } }
+        - addForeignKeyConstraint: { baseTableName: path_signal_input, baseColumnNames: signal_id, referencedTableName: path_signal, referencedColumnNames: signal_id, constraintName: fk_app_path_signal_input_signal, onDelete: CASCADE }
+        - createIndex:
+            tableName: path_signal_input
+            indexName: idx_app_path_signal_input_signal
+            ifNotExists: true
+            columns:
+              - column: { name: signal_id }
+        - createTable:
+            tableName: path_view_preference
+            columns:
+              - column: { name: user_id, type: varchar(255), constraints: { primaryKey: true, nullable: false } }
+              - column: { name: sort, type: varchar(16), constraints: { nullable: false } }
+              - column: { name: shape, type: varchar(16), constraints: { nullable: false } }
+              - column: { name: edges, type: varchar(16), constraints: { nullable: false } }
+        - addForeignKeyConstraint: { baseTableName: path_view_preference, baseColumnNames: user_id, referencedTableName: app_user, referencedColumnNames: id, constraintName: fk_app_path_view_preference_user }

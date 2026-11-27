@@ -11,6 +11,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import type { SvgIconComponent } from '@mui/icons-material';
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded';
 import AssignmentIcon from '@mui/icons-material/Assignment';
+import AltRouteRoundedIcon from '@mui/icons-material/AltRouteRounded';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -563,6 +564,13 @@ export function SideNav() {
                                 Icon={AssignmentIcon}
                                 text="Tasks"
                                 targetPage="/tasks"
+                                expanded={open}
+                                onNavigate={navigateFromDrawer}
+                            />
+                            <SideMenuButton
+                                Icon={AltRouteRoundedIcon}
+                                text="Paths"
+                                targetPage="/paths"
                                 expanded={open}
                                 onNavigate={navigateFromDrawer}
                             />
