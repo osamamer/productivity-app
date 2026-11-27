@@ -718,6 +718,7 @@ export const taskService = {
                 parentId: task.parentId,
                 mentalThreadId: task.mentalThreadId,
                 projectId: task.projectId,
+                checkpointId: task.checkpointId,
                 calendarId: task.calendarId,
                 recurrenceFrequency: task.recurrenceFrequency,
                 recurrenceEndDate: task.recurrenceEndDate,

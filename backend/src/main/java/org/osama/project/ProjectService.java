@@ -6,9 +6,11 @@ import org.osama.task.TaskRepository;
 import org.osama.task.recurrence.TaskSeriesRepository;
 import org.osama.user.User;
 import org.osama.user.UserRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -31,15 +33,21 @@ public class ProjectService {
     private final TaskRepository taskRepository;
     private final TaskSeriesRepository taskSeriesRepository;
     private final UserRepository userRepository;
+    private final CheckpointRepository checkpointRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ProjectService(ProjectRepository projectRepository,
                           TaskRepository taskRepository,
                           TaskSeriesRepository taskSeriesRepository,
-                          UserRepository userRepository) {
+                          UserRepository userRepository,
+                          CheckpointRepository checkpointRepository,
+                          ApplicationEventPublisher eventPublisher) {
         this.projectRepository = projectRepository;
         this.taskRepository = taskRepository;
         this.taskSeriesRepository = taskSeriesRepository;
         this.userRepository = userRepository;
+        this.checkpointRepository = checkpointRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -131,7 +139,9 @@ public class ProjectService {
         Project project = findOwnedProject(projectId, userId);
         taskRepository.clearProjectAssignments(projectId, userId);
         taskSeriesRepository.clearProjectAssignments(projectId, userId);
+        checkpointRepository.deleteAllOfProject(projectId, userId);
         projectRepository.delete(project);
+        eventPublisher.publishEvent(new ProjectDeletedEvent(projectId, userId));
         log.info("Project deleted: userId={} projectId={}", userId, projectId);
     }
 
@@ -139,6 +149,23 @@ public class ProjectService {
     public Project requireOwnedProject(String projectId, String userId) {
         return projectRepository.findByProjectIdAndUserId(projectId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
+    }
+
+    /** Marks the project done now, or not done. */
+    @Transactional
+    public void setCompleted(String projectId, boolean completed, String userId) {
+        Project project = findOwnedProject(projectId, userId);
+        if (completed == (project.getCompletedAt() != null)) return;
+        project.setCompletedAt(completed ? LocalDateTime.now() : null);
+        projectRepository.saveAndFlush(project);
+        log.info("Project completion changed: userId={} projectId={} completed={}", userId, projectId, completed);
+    }
+
+    /** The checkpoint a task is being put under, checked to belong to the user. */
+    @Transactional(readOnly = true)
+    public Checkpoint requireOwnedCheckpoint(String checkpointId, String userId) {
+        return checkpointRepository.findByIdAndUserId(checkpointId, userId)
+                .orElseThrow(() -> new IllegalArgumentException("Checkpoint not found: " + checkpointId));
     }
 
     private Project findOwnedProject(String projectId, String userId) {

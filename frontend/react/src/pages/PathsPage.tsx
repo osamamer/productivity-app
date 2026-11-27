@@ -9,9 +9,13 @@ import { timeScale } from '../components/paths/roadLayout';
 import { usePathsOverview } from '../hooks/usePathsOverview';
 import { pathService } from '../services/api/pathService';
 import { loadPathsOverview } from '../services/cache/pathsOverviewCache';
+import { MilestoneDialog } from '../components/paths/MilestoneDialog';
 import type { Path, PathView } from '../types/Path';
 
-type Editing = { path: Path | null } | null;
+type Editing =
+    | { kind: 'path'; path: Path | null }
+    | { kind: 'milestone'; pathId: string; milestoneId: string | null }
+    | null;
 
 /** Paths: each long-running area of life as a road, past weeks below today, coloured by its signal. */
 export function PathsPage() {
@@ -24,6 +28,8 @@ export function PathsPage() {
         const currentWeekStart = weeks?.[weeks.length - 1]?.weekStart;
         return currentWeekStart ? timeScale(currentWeekStart, weeks.length) : null;
     }, [overview]);
+
+    const editingRoad = (pathId: string | undefined) => overview?.paths.find(road => road.path.id === pathId);
 
     const reload = async () => {
         const fresh = await loadPathsOverview(today);
@@ -58,7 +64,7 @@ export function PathsPage() {
         <PageWrapper>
             <Box sx={{ width: '100%', mx: 'auto', py: { xs: 2, md: 3 }, textAlign: 'left', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 {overview && roads.length > 0 && (
-                    <PathsHeader roads={roads} view={overview.view} onViewChange={changeView} onCreate={() => setEditing({ path: null })} />
+                    <PathsHeader roads={roads} view={overview.view} onViewChange={changeView} onCreate={() => setEditing({ kind: 'path', path: null })} />
                 )}
                 {(!overview || roads.length === 0) && <Typography variant="h4" fontWeight={750} sx={{ letterSpacing: '-0.03em', mb: 2 }}>Paths</Typography>}
                 {(error || saveError) && <Alert severity="error" sx={{ mb: 1.5 }} onClose={saveError ? () => setSaveError(null) : undefined}>{saveError ?? error}</Alert>}
@@ -68,14 +74,16 @@ export function PathsPage() {
                         <Typography sx={{ color: 'rgba(244,242,255,0.65)', maxWidth: 460, mx: 'auto', mt: 1 }}>
                             A path is a long-running area of your life, like Writer or Body. Its road is coloured each week by stats you already log.
                         </Typography>
-                        <Button variant="contained" sx={{ mt: 3, textTransform: 'none', fontWeight: 700 }} onClick={() => setEditing({ path: null })}>
+                        <Button variant="contained" sx={{ mt: 3, textTransform: 'none', fontWeight: 700 }} onClick={() => setEditing({ kind: 'path', path: null })}>
                             New path
                         </Button>
                     </Box>
                 )}
                 {overview && scale && roads.length > 0 && (
                     <PathsVortex roads={roads} scale={scale} view={overview.view}
-                                 onOpenPath={path => setEditing({ path })} onReorder={reorder} />
+                                 onOpenPath={path => setEditing({ kind: 'path', path })}
+                                 onOpenMilestone={(path, milestone) => setEditing({ kind: 'milestone', pathId: path.id, milestoneId: milestone.id })}
+                                 onReorder={reorder} />
                 )}
                 {overview && roads.length > 0 && (
                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1.5 }}>
@@ -84,9 +92,28 @@ export function PathsPage() {
                     </Typography>
                 )}
             </Box>
-            {editing && (
+            {editing?.kind === 'path' && (
                 <PathEditorDialog path={editing.path} existingPaths={overview?.paths.length ?? 0} today={today}
-                                  onClose={() => setEditing(null)} onSaved={saved} />
+                                  onClose={() => setEditing(null)} onSaved={saved}
+                                  milestones={editingRoad(editing.path?.id)?.milestones}
+                                  onOpenMilestone={editing.path ? milestone => setEditing({
+                                      kind: 'milestone', pathId: (editing.path as Path).id, milestoneId: milestone?.id ?? null,
+                                  }) : undefined} />
+            )}
+            {editing?.kind === 'milestone' && editingRoad(editing.pathId) && (
+                <MilestoneDialog
+                    key={editing.milestoneId ?? 'new'}
+                    pathId={editing.pathId}
+                    pathName={editingRoad(editing.pathId)?.path.name ?? ''}
+                    color={editingRoad(editing.pathId)?.path.color ?? '#A395F2'}
+                    milestone={editingRoad(editing.pathId)?.milestones.find(milestone => milestone.id === editing.milestoneId) ?? null}
+                    today={today}
+                    onClose={() => setEditing(null)}
+                    onChanged={async createdId => {
+                        await reload();
+                        if (createdId) setEditing({ kind: 'milestone', pathId: editing.pathId, milestoneId: createdId });
+                    }}
+                />
             )}
         </PageWrapper>
     );

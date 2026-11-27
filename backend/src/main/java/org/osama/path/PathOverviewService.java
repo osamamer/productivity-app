@@ -30,6 +30,7 @@ public class PathOverviewService {
     private final PathService pathService;
     private final SignalFactory signalFactory;
     private final StatEntryRepository entryRepository;
+    private final MilestoneService milestoneService;
 
     /**
      * Weekly strengths from the week holding {@code from} through the current week.
@@ -44,10 +45,13 @@ public class PathOverviewService {
         Map<String, StatDefinition> definitions = signalFactory.definitionsFor(
                 paths.stream().map(Path::getSignal).toList(), userId);
         Map<String, List<StatEntry>> entries = loadEntries(definitions.keySet(), firstWeek, today, userId);
+        Map<String, List<MilestoneResponse>> milestones = milestoneService.describe(
+                paths.stream().map(Path::getId).toList(), today, userId);
         List<PathOverviewResponse.PathRoad> roads = new ArrayList<>();
         for (int index = 0; index < paths.size(); index++) {
             roads.add(new PathOverviewResponse.PathRoad(described.get(index),
-                    scoreWeeks(paths.get(index).getSignal(), definitions, entries, firstWeek, today)));
+                    scoreWeeks(paths.get(index).getSignal(), definitions, entries, firstWeek, today),
+                    milestones.getOrDefault(paths.get(index).getId(), List.of())));
         }
         return new PathOverviewResponse(today, pathService.getView(userId), roads);
     }

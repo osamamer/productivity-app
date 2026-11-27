@@ -89,7 +89,7 @@ Existing entity, gaining:
 
 | Field | Notes |
 |---|---|
-| completedAt | Set when the user marks it done, or when its last checkpoint completes. |
+| completedAt | Set when the user marks it done. Being done because every checkpoint is reached is derived, not stored. |
 
 There are no existing projects to migrate. Every project belongs to exactly one milestone.
 
@@ -107,8 +107,8 @@ A dated step inside a project. Every checkpoint must have a target metric; that 
 | metric: aggregation | `SUM` (total since `countFrom`), `COUNT_DAYS` (logged days since `countFrom`), or `LATEST` (most recent value, for things like a savings balance). |
 | metric: countFrom | Date counting starts. Defaults to the project's creation date. |
 | metric: baseline | Added to `SUM` and `COUNT_DAYS`, for progress made before logging started: the 70.1k words already written. |
-| metric: targetValue | Reached when the metric gets there (or falls to it, for less-is-better stats). |
-| completedAt | Set automatically when the target is reached. |
+| metric: targetValue | Reached when the metric gets there. A `LATEST` metric on a less-is-better stat is reached when it falls to it; `SUM` and `COUNT_DAYS` only rise. |
+| reachedOn | Derived on every read, not stored: the first day the metric got to the target. Once reached it stays reached, even if a `LATEST` value later moves away. |
 
 ### Task
 

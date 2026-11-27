@@ -114,8 +114,33 @@ public interface TaskRepository extends JpaRepository<Task, String>,
                                                   @Param("projectIds") Collection<String> projectIds);
 
     @Modifying
-    @Query("update Task t set t.projectId = null where t.projectId = :projectId and t.userId = :userId and t.softDeleted = false")
+    @Query("update Task t set t.projectId = null, t.checkpointId = null where t.projectId = :projectId and t.userId = :userId and t.softDeleted = false")
     int clearProjectAssignments(@Param("projectId") String projectId, @Param("userId") String userId);
+
+    @Modifying
+    @Query("update Task t set t.checkpointId = null where t.checkpointId = :checkpointId and t.userId = :userId and t.softDeleted = false")
+    int clearCheckpointAssignments(@Param("checkpointId") String checkpointId, @Param("userId") String userId);
+
+    interface CheckpointTaskCount {
+        String getCheckpointId();
+        long getTaskCount();
+        long getCompletedTaskCount();
+    }
+
+    @Query("""
+            select t.checkpointId as checkpointId,
+                   count(t) as taskCount,
+                   sum(case when t.completed = true then 1 else 0 end) as completedTaskCount
+            from Task t
+            where t.userId = :userId
+              and t.checkpointId in :checkpointIds
+              and t.parentId is null
+              and t.skipped = false
+              and t.softDeleted = false
+            group by t.checkpointId
+            """)
+    List<CheckpointTaskCount> countTasksByCheckpointIds(@Param("userId") String userId,
+                                                        @Param("checkpointIds") Collection<String> checkpointIds);
 
     @Modifying
     @Query("update Task t set t.mentalThreadId = null where t.mentalThreadId = :threadId and t.softDeleted = false")

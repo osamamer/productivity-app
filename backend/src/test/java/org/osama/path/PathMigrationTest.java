@@ -47,6 +47,31 @@ class PathMigrationTest {
         }
     }
 
+    @Test
+    void milestonesMigrationKeepsOneMilestonePerProject() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:h2:mem:milestone-migration-" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1")) {
+            execute(connection, "CREATE TABLE app_user (id VARCHAR(255) PRIMARY KEY)");
+            execute(connection, "CREATE TABLE project (project_id VARCHAR(255) PRIMARY KEY)");
+            execute(connection, "CREATE TABLE task (task_id VARCHAR(255) PRIMARY KEY)");
+            execute(connection, "INSERT INTO app_user (id) VALUES ('user-1')");
+            execute(connection, "INSERT INTO project (project_id) VALUES ('project-1')");
+
+            applyChangeLog(connection, "db/changelog/changes/101-paths.yaml");
+            applyChangeLog(connection, "db/changelog/changes/102-milestones-checkpoints.yaml");
+            execute(connection, """
+                    INSERT INTO life_path (path_id, user_id, name, color, icon, created_at, updated_at)
+                    VALUES ('path-1', 'user-1', 'Writer', '#A395F2', 'writer', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """);
+            execute(connection, "INSERT INTO milestone (milestone_id, path_id, project_id) VALUES ('m-1', 'path-1', 'project-1')");
+            execute(connection, "UPDATE task SET checkpoint_id = NULL");
+
+            assertThatThrownBy(() -> execute(connection,
+                    "INSERT INTO milestone (milestone_id, path_id, project_id) VALUES ('m-2', 'path-1', 'project-1')"))
+                    .isInstanceOf(SQLException.class);
+        }
+    }
+
     private void applyChangeLog(Connection connection, String path) throws Exception {
         Database database = DatabaseFactory.getInstance()
                 .findCorrectDatabaseImplementation(new JdbcConnection(connection));

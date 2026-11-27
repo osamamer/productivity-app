@@ -7,7 +7,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { pathService } from '../../services/api/pathService';
 import { statService } from '../../services/api/statService';
 import type { StatDefinition } from '../../types/Stats';
-import { PATH_ICONS, type Path, type SignalCombine, type WeekStrength } from '../../types/Path';
+import { PATH_ICONS, type Milestone, type Path, type SignalCombine, type WeekStrength } from '../../types/Path';
+import { milestoneSubtitle } from './milestoneText';
 import { PATH_COLORS, PATH_ICON_COMPONENTS } from './pathIcons';
 import { emptyForm, formFromPath, newInput, statOptions, toSignalDraft, type PathForm } from './pathDraft';
 import { SignalInputFields } from './SignalInputFields';
@@ -20,6 +21,9 @@ interface Props {
     today: string;
     onClose: () => void;
     onSaved: () => void;
+    /** The path's milestones, listed when editing; opening one (or null for a new one) leaves this dialog. */
+    milestones?: Milestone[];
+    onOpenMilestone?: (milestone: Milestone | null) => void;
 }
 
 const COMBINE_OPTIONS: { value: SignalCombine; label: string }[] = [
@@ -30,7 +34,7 @@ const COMBINE_OPTIONS: { value: SignalCombine; label: string }[] = [
 const PREVIEW_DELAY_MS = 400;
 
 /** Creates or edits a path and its signal, with a preview of how recent weeks would have scored. */
-export function PathEditorDialog({ path, existingPaths, today, onClose, onSaved }: Props) {
+export function PathEditorDialog({ path, existingPaths, today, onClose, onSaved, milestones = [], onOpenMilestone }: Props) {
     const [form, setForm] = useState<PathForm>(() => (path ? formFromPath(path) : emptyForm(existingPaths)));
     const [definitions, setDefinitions] = useState<StatDefinition[]>(() => statService.getCachedDefinitions() ?? []);
     const [preview, setPreview] = useState<WeekStrength[] | null>(null);
@@ -169,6 +173,25 @@ export function PathEditorDialog({ path, existingPaths, today, onClose, onSaved 
                     {preview && <SignalPreviewBars weeks={preview} color={form.color} />}
                 </Box>
 
+                {path && onOpenMilestone && (
+                    <Box sx={{ display: 'grid', gap: 0.75 }}>
+                        <Box>
+                            <Typography variant="subtitle2" fontWeight={700}>Milestones</Typography>
+                            <Typography variant="caption" color="text.secondary">Each milestone is the end of a project, drawn as a ring ahead on the road.</Typography>
+                        </Box>
+                        {milestones.map(milestone => (
+                            <Button key={milestone.id} onClick={() => onOpenMilestone(milestone)} variant="outlined" color="inherit"
+                                    sx={{ justifyContent: 'space-between', textTransform: 'none', borderColor: 'divider' }}>
+                                <span>{milestone.done ? '✓ ' : ''}{milestone.name}</span>
+                                <Typography component="span" variant="caption" color="text.secondary">{milestoneSubtitle(milestone)}</Typography>
+                            </Button>
+                        ))}
+                        <Button size="small" startIcon={<AddRoundedIcon />} sx={{ justifySelf: 'start', textTransform: 'none' }}
+                                onClick={() => onOpenMilestone(null)}>
+                            Add a milestone
+                        </Button>
+                    </Box>
+                )}
                 {path && (
                     <FormControlLabel control={<Switch checked={form.paused} onChange={event => update({ paused: event.target.checked })} />}
                                       label="Paused (drawn dimmed)" />

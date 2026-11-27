@@ -472,7 +472,10 @@ public class TaskService {
         }
 
         String projectId = normalizeOptionalId(request.getProjectId());
-        if (projectId != null) {
+        String checkpointId = normalizeOptionalId(request.getCheckpointId());
+        if (checkpointId != null) {
+            projectId = projectService.requireOwnedCheckpoint(checkpointId, userId).getProjectId();
+        } else if (projectId != null) {
             projectService.requireOwnedProject(projectId, userId);
         }
 
@@ -497,6 +500,7 @@ public class TaskService {
 
         task.setParentId(parentId); // null is fine for main tasks
         task.setProjectId(projectId); // null is fine
+        task.setCheckpointId(checkpointId);
         task.setTag(request.getTag()); // null is fine
         task.setImportance(request.getImportance()); // primitive int defaults to 0
         if (mentalThread == null) {
@@ -603,8 +607,17 @@ public class TaskService {
             if (projectId != null) {
                 projectService.requireOwnedProject(projectId, userId);
             }
+            if (!Objects.equals(projectId, task.getProjectId())) task.setCheckpointId(null);
             task.setProjectId(projectId);
             changedFields.add("projectId");
+        }
+        if (request.isCheckpointIdPresent()) {
+            String checkpointId = normalizeOptionalId(request.getCheckpointId());
+            if (checkpointId != null) {
+                task.setProjectId(projectService.requireOwnedCheckpoint(checkpointId, userId).getProjectId());
+            }
+            task.setCheckpointId(checkpointId);
+            changedFields.add("checkpointId");
         }
         if (request.getScheduledPerformDateTime() != null) {
             String requestedDateTime = request.getScheduledPerformDateTime().trim();

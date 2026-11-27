@@ -328,3 +328,5 @@ databaseChangeLog:
       file: db/changelog/changes/100-calendar-event-task.yaml
   - include:
       file: db/changelog/changes/101-paths.yaml
+  - include:
+      file: db/changelog/changes/102-milestones-checkpoints.yaml

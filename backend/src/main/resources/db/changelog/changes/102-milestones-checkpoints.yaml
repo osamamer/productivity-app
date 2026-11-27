@@ -1,0 +1,60 @@
+databaseChangeLog:
+  - changeSet:
+      id: 102-milestones-checkpoints
+      author: claude
+      changes:
+        - addColumn:
+            tableName: project
+            columns:
+              - column: { name: completed_at, type: timestamp }
+        - createTable:
+            tableName: checkpoint
+            columns:
+              - column: { name: checkpoint_id, type: varchar(255), constraints: { primaryKey: true, nullable: false } }
+              - column: { name: project_id, type: varchar(255), constraints: { nullable: false } }
+              - column: { name: user_id, type: varchar(255), constraints: { nullable: false } }
+              - column: { name: name, type: varchar(120), constraints: { nullable: false } }
+              - column: { name: target_date, type: date }
+              - column: { name: display_order, type: int, defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: stat_definition_id, type: varchar(255), constraints: { nullable: false } }
+              - column: { name: value_source, type: varchar(16), constraints: { nullable: false } }
+              - column: { name: aggregation, type: varchar(16), constraints: { nullable: false } }
+              - column: { name: count_from, type: date, constraints: { nullable: false } }
+              - column: { name: baseline, type: double precision, defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: target_value, type: double precision, constraints: { nullable: false } }
+              - column: { name: created_at, type: timestamp, constraints: { nullable: false } }
+              - column: { name: soft_deleted, type: boolean, defaultValueBoolean: false, constraints: { nullable: false } }
+        - addForeignKeyConstraint: { baseTableName: checkpoint, baseColumnNames: project_id, referencedTableName: project, referencedColumnNames: project_id, constraintName: fk_app_checkpoint_project }
+        - addForeignKeyConstraint: { baseTableName: checkpoint, baseColumnNames: user_id, referencedTableName: app_user, referencedColumnNames: id, constraintName: fk_app_checkpoint_user }
+        - createIndex:
+            tableName: checkpoint
+            indexName: idx_app_checkpoint_project
+            ifNotExists: true
+            columns:
+              - column: { name: project_id }
+        - createTable:
+            tableName: milestone
+            columns:
+              - column: { name: milestone_id, type: varchar(255), constraints: { primaryKey: true, nullable: false } }
+              - column: { name: path_id, type: varchar(255), constraints: { nullable: false } }
+              - column: { name: project_id, type: varchar(255), constraints: { nullable: false, unique: true, uniqueConstraintName: uq_app_milestone_project } }
+              - column: { name: target_date, type: date }
+              - column: { name: display_order, type: int, defaultValueNumeric: 0, constraints: { nullable: false } }
+        - addForeignKeyConstraint: { baseTableName: milestone, baseColumnNames: path_id, referencedTableName: life_path, referencedColumnNames: path_id, constraintName: fk_app_milestone_path }
+        - addForeignKeyConstraint: { baseTableName: milestone, baseColumnNames: project_id, referencedTableName: project, referencedColumnNames: project_id, constraintName: fk_app_milestone_project }
+        - createIndex:
+            tableName: milestone
+            indexName: idx_app_milestone_path
+            ifNotExists: true
+            columns:
+              - column: { name: path_id }
+        - addColumn:
+            tableName: task
+            columns:
+              - column: { name: checkpoint_id, type: varchar(255) }
+        - createIndex:
+            tableName: task
+            indexName: idx_app_task_checkpoint
+            ifNotExists: true
+            columns:
+              - column: { name: checkpoint_id }

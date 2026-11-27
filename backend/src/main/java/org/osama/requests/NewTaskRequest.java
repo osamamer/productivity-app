@@ -26,6 +26,9 @@ public class NewTaskRequest {
 
     private String projectId;
 
+    // Puts the task under a checkpoint, and so in that checkpoint's project.
+    private String checkpointId;
+
     private String calendarId;
 
     @Size(max = 50, message = "Tag must not exceed 50 characters")

@@ -28,12 +28,14 @@ public class PathController {
     private final CurrentUserService currentUserService;
     private final PathService pathService;
     private final PathOverviewService overviewService;
+    private final MilestoneService milestoneService;
 
     public PathController(CurrentUserService currentUserService, PathService pathService,
-                          PathOverviewService overviewService) {
+                          PathOverviewService overviewService, MilestoneService milestoneService) {
         this.currentUserService = currentUserService;
         this.pathService = pathService;
         this.overviewService = overviewService;
+        this.milestoneService = milestoneService;
     }
 
     @GetMapping
@@ -89,6 +91,28 @@ public class PathController {
     @DeleteMapping("/{pathId}")
     public ResponseEntity<Void> deletePath(@PathVariable String pathId) {
         pathService.deletePath(pathId, currentUserService.getCurrentUserId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{pathId}/milestones")
+    public ResponseEntity<MilestoneResponse> createMilestone(
+            @PathVariable String pathId, @RequestBody MilestoneRequest request,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate today) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(milestoneService.createMilestone(
+                pathId, request, orToday(today), currentUserService.getCurrentUserId()));
+    }
+
+    @PatchMapping("/{pathId}/milestones/{milestoneId}")
+    public MilestoneResponse updateMilestone(
+            @PathVariable String pathId, @PathVariable String milestoneId, @RequestBody MilestoneRequest request,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate today) {
+        return milestoneService.updateMilestone(pathId, milestoneId, request, orToday(today),
+                currentUserService.getCurrentUserId());
+    }
+
+    @DeleteMapping("/{pathId}/milestones/{milestoneId}")
+    public ResponseEntity<Void> deleteMilestone(@PathVariable String pathId, @PathVariable String milestoneId) {
+        milestoneService.deleteMilestone(pathId, milestoneId, currentUserService.getCurrentUserId());
         return ResponseEntity.noContent().build();
     }
 

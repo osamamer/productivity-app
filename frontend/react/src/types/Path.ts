@@ -62,10 +62,76 @@ export interface PathView {
     edges: PathEdges;
 }
 
+export type CheckpointAggregation = 'SUM' | 'COUNT_DAYS' | 'LATEST';
+
+export interface CheckpointMetric {
+    statDefinitionId: string;
+    statName: string | null;
+    unit: string | null;
+    valueSource: string;
+    valueType: StatType | null;
+    aggregation: CheckpointAggregation;
+    countFrom: string;
+    baseline: number;
+    targetValue: number;
+    /** LATEST on a less-is-better stat: reached when the value falls to the target. */
+    falling: boolean;
+}
+
+/** A dated step inside a project; done once its metric reaches the target (`reachedOn`). */
+export interface Checkpoint {
+    id: string;
+    projectId: string;
+    name: string;
+    targetDate: string | null;
+    displayOrder: number;
+    metric: CheckpointMetric;
+    current: number | null;
+    progress: number;
+    reachedOn: string | null;
+    taskCount: number;
+    completedTaskCount: number;
+}
+
+/** The end of one project on a path. Undated milestones sit in the Someday zone. */
+export interface Milestone {
+    id: string;
+    projectId: string;
+    name: string;
+    targetDate: string | null;
+    displayOrder: number;
+    done: boolean;
+    doneOn: string | null;
+    progress: number;
+    taskCount: number;
+    completedTaskCount: number;
+    checkpoints: Checkpoint[];
+}
+
+export interface MilestoneDraft {
+    name?: string;
+    targetDate?: string | null;
+    displayOrder?: number;
+    done?: boolean;
+}
+
+export interface CheckpointDraft {
+    name?: string;
+    targetDate?: string | null;
+    statDefinitionId?: string;
+    valueSource?: string;
+    aggregation?: CheckpointAggregation;
+    countFrom?: string;
+    baseline?: number;
+    targetValue?: number;
+}
+
 export interface PathRoad {
     path: Path;
     /** Oldest first; the last is the current week. */
     weeks: WeekStrength[];
+    /** In display order, with their checkpoints. */
+    milestones: Milestone[];
 }
 
 export interface PathsOverview {

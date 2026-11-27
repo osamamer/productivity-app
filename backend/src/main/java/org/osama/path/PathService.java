@@ -30,6 +30,7 @@ public class PathService {
     private final PathViewPreferenceRepository viewRepository;
     private final SignalFactory signalFactory;
     private final UserRepository userRepository;
+    private final MilestoneService milestoneService;
 
     @Transactional(readOnly = true)
     public List<PathResponse> getPaths(String userId) {
@@ -87,7 +88,9 @@ public class PathService {
 
     @Transactional
     public void deletePath(String pathId, String userId) {
-        pathRepository.delete(findOwned(pathId, userId));
+        Path path = findOwned(pathId, userId);
+        milestoneService.deleteAllOfPath(pathId, userId);
+        pathRepository.delete(path);
         log.info("Path deleted: userId={} pathId={}", userId, pathId);
     }
 

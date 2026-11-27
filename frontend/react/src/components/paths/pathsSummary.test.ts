@@ -8,6 +8,7 @@ function road(id: string, strengths: number[], { displayOrder = 0, paused = fals
             id, name: id, color: '#A395F2', icon: 'mind', displayOrder, paused,
             signal: { combineMethod: 'AVERAGE', inputs: [] },
         },
+        milestones: [],
         weeks: strengths.map((strength, index) => ({ weekStart: `2026-11-0${index + 1}`, elapsedDays: 7, strength, inputs: [] })),
     };
 }

@@ -9,6 +9,8 @@ export interface Project {
     icon: ProjectIcon;
     creationDateTime: string;
     updatedAt: string;
+    /** When the project was marked done; null while open. */
+    completedAt?: string | null;
     taskCount: number;
     completedTaskCount: number;
 }

@@ -18,6 +18,8 @@ public class UpdateTaskRequest {
 
     private String projectId;
     private boolean projectIdPresent;
+    private String checkpointId;
+    private boolean checkpointIdPresent;
     private String calendarId;
     private boolean calendarIdPresent;
     private String calendarScope;
@@ -35,6 +37,12 @@ public class UpdateTaskRequest {
     public void setProjectId(String projectId) {
         this.projectId = projectId;
         this.projectIdPresent = true;
+    }
+
+    @JsonSetter("checkpointId")
+    public void setCheckpointId(String checkpointId) {
+        this.checkpointId = checkpointId;
+        this.checkpointIdPresent = true;
     }
 
     @JsonSetter("calendarId")

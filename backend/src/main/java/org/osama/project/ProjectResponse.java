@@ -10,6 +10,7 @@ public record ProjectResponse(
         String icon,
         LocalDateTime creationDateTime,
         LocalDateTime updatedAt,
+        LocalDateTime completedAt,
         long taskCount,
         long completedTaskCount
 ) {
@@ -22,6 +23,7 @@ public record ProjectResponse(
                 project.getIcon(),
                 project.getCreationDateTime(),
                 project.getUpdatedAt(),
+                project.getCompletedAt(),
                 taskCount,
                 completedTaskCount
         );

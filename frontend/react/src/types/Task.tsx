@@ -18,6 +18,8 @@ export interface Task   {
     displayOrder: number;
     mentalThreadId: string | null;
     projectId: string | null;
+    /** Set when the task belongs to its project through a checkpoint. */
+    checkpointId?: string | null;
     taskSeriesId: string | null;
     recurrenceFrequency?: TaskRecurrenceFrequency;
     calendarId?: string;

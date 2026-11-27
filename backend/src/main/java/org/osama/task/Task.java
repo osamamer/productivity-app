@@ -63,6 +63,10 @@ public class Task {
     @Column
     private String projectId;
 
+    // A task in a project belongs to it through one of its checkpoints; setting this sets projectId.
+    @Column(name = "checkpoint_id")
+    private String checkpointId;
+
     @Column
     private String tag;
 

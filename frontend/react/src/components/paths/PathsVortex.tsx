@@ -1,6 +1,6 @@
 import { Box, Button } from '@mui/material';
 import { useLayoutEffect, useRef, useState, type DragEvent, type PointerEvent } from 'react';
-import type { Path, PathRoad, PathView } from '../../types/Path';
+import type { Milestone, Path, PathRoad, PathView } from '../../types/Path';
 import { PathColumnHeader, COLUMN_HEADER_HEIGHT } from './PathColumnHeader';
 import { PathRoadSvg } from './PathRoadSvg';
 import { moveBefore } from './pathsSummary';
@@ -13,6 +13,7 @@ interface Props {
     scale: TimeScale;
     view: PathView;
     onOpenPath: (path: Path) => void;
+    onOpenMilestone: (path: Path, milestone: Milestone) => void;
     onReorder: (pathIds: string[]) => void;
 }
 
@@ -25,7 +26,7 @@ interface Tip {
 const VOID = '#050507';
 
 /** The dark panel of roads: time scrolls vertically (future up), paths sideways. */
-export function PathsVortex({ roads, scale, view, onOpenPath, onReorder }: Props) {
+export function PathsVortex({ roads, scale, view, onOpenPath, onOpenMilestone, onReorder }: Props) {
     const scrollerRef = useRef<HTMLDivElement>(null);
     const columnsRef = useRef<HTMLDivElement>(null);
     const positions = useRef(new Map<string, number>());
@@ -66,8 +67,8 @@ export function PathsVortex({ roads, scale, view, onOpenPath, onReorder }: Props
     }, [order]);
 
     const showTip = (event: PointerEvent) => {
-        const week = (event.target as Element).closest?.('.path-week');
-        const text = week?.getAttribute('data-tip');
+        const marked = (event.target as Element).closest?.('[data-tip]');
+        const text = marked?.getAttribute('data-tip');
         setTip(text ? { text, x: event.clientX, y: event.clientY } : null);
     };
 
@@ -101,6 +102,8 @@ export function PathsVortex({ roads, scale, view, onOpenPath, onReorder }: Props
                                      '& svg': { display: 'block' },
                                      '& .path-week-dash': { transition: 'opacity .15s, stroke-width .15s' },
                                      '& .path-week:hover .path-week-dash': { opacity: '1 !important', strokeWidth: 3.4 },
+                                     '& .path-milestone': { cursor: 'pointer', outline: 'none' },
+                                     '& .path-milestone:focus-visible ellipse:first-of-type': { strokeWidth: 3.4 },
                                  }}>
                                 <PathColumnHeader
                                     road={road}
@@ -112,7 +115,8 @@ export function PathsVortex({ roads, scale, view, onOpenPath, onReorder }: Props
                                     }}
                                     onDrop={drop(road.path.id)}
                                 />
-                                <PathRoadSvg road={road} scale={scale} shape={view.shape} edges={view.edges} />
+                                <PathRoadSvg road={road} scale={scale} shape={view.shape} edges={view.edges}
+                                             onOpenMilestone={milestone => onOpenMilestone(road.path, milestone)} />
                             </Box>
                         ))}
                     </Box>
