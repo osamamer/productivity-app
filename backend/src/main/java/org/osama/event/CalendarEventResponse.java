@@ -1,5 +1,6 @@
 package org.osama.event;
 
+import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -19,6 +20,7 @@ public record CalendarEventResponse(
         LocalDate recurrenceEndDate,
         Integer recurrenceInterval,
         RecurrenceUnit recurrenceUnit,
+        List<DayOfWeek> recurrenceDaysOfWeek,
         List<String> cancelledOccurrenceKeys,
         List<CalendarEventOccurrenceResponse> occurrenceOverrides,
         Integer reminderMinutesBefore,

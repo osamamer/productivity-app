@@ -353,6 +353,23 @@ class TaskSeriesServiceTest {
     }
 
     @Test
+    void settingTheSeriesReminderChangesEveryUpcomingOccurrenceAndLaterOnes() {
+        LocalDateTime start = LocalDateTime.now().plusDays(1).withSecond(0).withNano(0);
+        NewTaskRequest request = request(start);
+        request.setRecurrenceFrequency(TaskRecurrenceFrequency.DAILY);
+        request.setRecurrenceEndDate(start.toLocalDate().plusDays(2));
+        Task first = taskSeriesService.createSeries(request, USER_ID);
+
+        TaskSeriesResponse updated = taskSeriesService.updateReminder(first.getTaskSeriesId(), 15, USER_ID);
+
+        assertEquals(15, updated.reminderMinutesBefore());
+        assertTrue(taskRepository.findAllByTaskSeriesIdOrderBySeriesOccurrenceAtAsc(first.getTaskSeriesId())
+                .stream()
+                .map(task -> taskService.getTaskForUserOrThrow(task.getTaskId(), USER_ID).getReminderMinutesBefore())
+                .allMatch(minutes -> Integer.valueOf(15).equals(minutes)));
+    }
+
+    @Test
     void updatingSeriesPriorityChangesEveryMaterializedOccurrence() {
         LocalDateTime start = LocalDateTime.now().plusDays(1).withSecond(0).withNano(0);
         NewTaskRequest request = request(start);

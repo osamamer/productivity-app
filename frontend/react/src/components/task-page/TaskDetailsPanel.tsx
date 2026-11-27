@@ -4,7 +4,6 @@ import {
     Button,
     Chip,
     Checkbox,
-    Collapse,
     IconButton,
     ListItemIcon,
     ListItemText,
@@ -24,11 +23,8 @@ import { TaskSeries } from '../../types/TaskSeries';
 import { defaultTaskRecurrence, TaskRecurrenceDraft } from '../../types/TaskRecurrence';
 import { TaskPomodoroStats } from '../../types/TaskPomodoroStats';
 import { taskService } from '../../services/api';
-import { AppDateField } from '../input/AppPickerFields';
-import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from '../task/TaskRecurrencePicker';
-import { TaskSeriesTimeField } from '../task/TaskSeriesTimeField';
-import { TaskSchedulePicker } from '../task/TaskSchedulePicker';
-import { TaskReminderPicker } from '../task/TaskReminderPicker';
+import { TaskWhenField } from '../task/when/TaskWhenField';
+import { scheduleOf, whenDraftFromSchedule, type WhenChange } from '../task/when/whenModel';
 import { SubtaskNameField } from '../task/SubtaskNameField';
 import { SubtaskBulkActions } from '../task/SubtaskSelection';
 import { useSubtaskSelection } from '../task/useSubtaskSelection';
@@ -45,7 +41,11 @@ import {
     setCachedTaskDetails,
     updateCachedTaskDetails,
 } from '../../services/cache/taskDetailsCache';
-import { recurrenceDraftFromSeries } from '../../services/utils/taskRecurrenceDraft';
+import {
+    draftFromRepeatRule,
+    recurrenceDraftFromSeries,
+    repeatRuleFromDraft,
+} from '../../services/utils/taskRecurrenceDraft';
 
 type TaskDetailsPanelProps = {
     task: Task;
@@ -839,15 +839,7 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
         }
     };
 
-    const handleDateChange = (date: Date | null) => {
-        setScheduledDraft(date);
-        if (!date) commitDateChange(null);
-    };
-
     const scheduledPerformDateTime = formatTaskDateTime(scheduledDraft);
-    const canStartRecurrence = Boolean(scheduledPerformDateTime);
-    const showTimeOnlySchedule = canStartRecurrence
-        && recurrenceDraft.recurrenceFrequency !== 'NONE';
     const handleRecurrenceChange = (
         nextDraft: TaskRecurrenceDraft,
         nextScheduledPerformDateTime = scheduledPerformDateTime,
@@ -894,22 +886,61 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
             });
     };
 
-    const handleSeriesTimeChange = async (time: string) => {
+    const handleSeriesStartChange = async (startDateTime: string) => {
         const currentSeries = taskSeriesRef.current;
         if (!currentSeries?.active) return;
-        const date = currentSeries.startDateTime.slice(0, 10);
         const savedSeries = await taskService.updateTaskSeries(
             currentSeries.seriesId,
             recurrenceDraftRef.current,
             currentSeries.active,
             repeatSubtasksRef.current,
-            `${date}T${time}:00`,
+            startDateTime,
         );
         taskSeriesRef.current = savedSeries;
         const nextDraft = recurrenceDraftFromSeries(savedSeries);
         recurrenceDraftRef.current = nextDraft;
         setRecurrenceDraft(nextDraft);
         await onRefreshTasks?.();
+    };
+
+    const whenValue = whenDraftFromSchedule(
+        scheduledPerformDateTime,
+        task.reminderMinutesBefore ?? null,
+        repeatRuleFromDraft(recurrenceDraft),
+        repeatSubtasks,
+    );
+
+    const handleWhenSave = async (change: WhenChange) => {
+        const { next } = change;
+        const series = taskSeriesRef.current?.active ? taskSeriesRef.current : null;
+        const schedule = scheduleOf(next);
+        if (change.scheduleChanged) {
+            if (series && change.scheduleScope === 'all' && schedule) {
+                const startDate = next.date === whenValue.date ? series.startDateTime.slice(0, 10) : next.date;
+                await handleSeriesStartChange(`${startDate}T${next.time}:00`);
+            } else {
+                const date = schedule ? new Date(schedule) : null;
+                setScheduledDraft(date);
+                await commitDateChange(date);
+            }
+        }
+        const reminderForWholeSeries = Boolean(series) && change.reminderScope === 'all';
+        if (change.reminderChanged && !reminderForWholeSeries) {
+            await onUpdate(task.taskId, { reminderMinutesBefore: next.reminderMinutesBefore });
+        }
+        if (change.repeatChanged) {
+            repeatSubtasksRef.current = next.repeatSubtasks;
+            setRepeatSubtasks(next.repeatSubtasks);
+            handleRecurrenceChange(
+                draftFromRepeatRule(next.repeat, recurrenceDraftRef.current.timeZone),
+                formatTaskDateTime(schedule ? new Date(schedule) : null),
+            );
+            await recurrenceMutationRef.current;
+        }
+        if (change.reminderChanged && reminderForWholeSeries && series) {
+            await taskService.updateTaskSeriesReminder(series.seriesId, next.reminderMinutesBefore);
+            await onRefreshTasks?.();
+        }
     };
 
     const handleCreateSubtask = useCallback(async (name: string) => {
@@ -1249,107 +1280,18 @@ export const TaskDetailsPanel = React.memo(function TaskDetailsPanel({
 
                     <LocalizationProvider dateAdapter={AdapterDateFns}>
                         <Box onClick={event => event.stopPropagation()}>
-                            <Box
-                                sx={{
-                                    display: 'grid',
-                                    gridTemplateColumns: task.parentId
-                                        ? 'minmax(0, 1fr)'
-                                        : { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 3fr) minmax(0, 1fr)' },
-                                    gap: 1.25,
-                                    alignItems: 'start',
-                                }}
-                            >
-                                <Box sx={{ minWidth: 0 }}>
-                                    <Collapse in={showTimeOnlySchedule} timeout={180} unmountOnExit>
-                                        <TaskSchedulePicker
-                                            label="Schedule"
-                                            value={scheduledDraft}
-                                            savedValue={validScheduledDate}
-                                            timeOnly
-                                            onChange={handleDateChange}
-                                            onAccept={commitDateChange}
-                                        />
-                                    </Collapse>
-                                    <Collapse in={!showTimeOnlySchedule} timeout={180} unmountOnExit>
-                                        <TaskSchedulePicker
-                                            label="Schedule"
-                                            value={scheduledDraft}
-                                            savedValue={validScheduledDate}
-                                            timeOnly={false}
-                                            onChange={handleDateChange}
-                                            onAccept={commitDateChange}
-                                        />
-                                    </Collapse>
-                                </Box>
-
-                                {!task.parentId && (
-                                    <TaskRecurrencePicker
-                                        value={recurrenceDraft}
-                                        onChange={handleRecurrenceChange}
-                                        showEndDate={false}
-                                        showCustomOptions={false}
-                                    />
-                                )}
-                            </Box>
-                            {!task.parentId && (
-                                <Collapse in={recurrenceDraft.recurrenceFrequency !== 'NONE'} timeout={180} unmountOnExit>
-                                    <Box>
-                                    {visibleSubtaskState.items.length > 0 && (
-                                        <Box sx={{ mt: 1 }}>
-                                            <Checkbox checked={repeatSubtasks} size="small" inputProps={{ 'aria-label': 'Repeat subtasks with each occurrence' }}
-                                                onChange={event => {
-                                                    repeatSubtasksRef.current = event.target.checked;
-                                                    setRepeatSubtasks(event.target.checked);
-                                                    handleRecurrenceChange(recurrenceDraftRef.current);
-                                                }} />
-                                            <Typography component="span" variant="body2">Repeat subtasks with each occurrence</Typography>
-                                        </Box>
-                                    )}
-                                    <Box sx={{
-                                        mt: 1.25,
-                                        display: 'grid',
-                                        gridTemplateColumns: recurrenceDraft.recurrenceFrequency === 'CUSTOM'
-                                            ? { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) minmax(0, 1fr)' }
-                                            : 'minmax(0, 1fr)',
-                                        gap: 1.25,
-                                        alignItems: 'start',
-                                    }}>
-                                        {recurrenceDraft.recurrenceFrequency === 'CUSTOM' && (
-                                            <TaskRecurrenceCustomOptions
-                                                value={recurrenceDraft}
-                                                onChange={handleRecurrenceChange}
-                                            />
-                                        )}
-                                        <AppDateField
-                                            label="Repeat until (optional)"
-                                            format="dd-MM-yyyy"
-                                            value={recurrenceDraft.recurrenceEndDate ?? ''}
-                                            onChange={recurrenceEndDate => handleRecurrenceChange({
-                                                ...recurrenceDraft,
-                                                recurrenceEndDate: recurrenceEndDate || null,
-                                            })}
-                                        />
-                                    </Box>
-                                    {taskSeriesRef.current?.active && (
-                                        <TaskSeriesTimeField
-                                            startDateTime={taskSeriesRef.current.startDateTime}
-                                            onApply={handleSeriesTimeChange}
-                                        />
-                                    )}
-                                    </Box>
-                                </Collapse>
-                            )}
+                            <TaskWhenField
+                                value={whenValue}
+                                repeating={Boolean(taskSeriesRef.current?.active)}
+                                canRepeat={!task.parentId}
+                                showRepeatSubtasks={visibleSubtaskState.items.length > 0}
+                                onSave={handleWhenSave}
+                            />
                             {recurrenceError && (
                                 <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
                                     {recurrenceError}
                                 </Typography>
                             )}
-                            <TaskReminderPicker
-                                value={task.reminderMinutesBefore}
-                                scheduledAt={scheduledPerformDateTime}
-                                disabled={!scheduledPerformDateTime}
-                                onChange={reminderMinutesBefore => void onUpdate(task.taskId, { reminderMinutesBefore })}
-                            />
                         </Box>
                     </LocalizationProvider>
 

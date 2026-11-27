@@ -109,6 +109,12 @@ public class CalendarEventIcsExporter {
                 ? Math.max(1, event.recurrenceInterval() == null ? 1 : event.recurrenceInterval())
                 : 1;
         StringBuilder rule = new StringBuilder("FREQ=").append(frequency).append(";INTERVAL=").append(interval);
+        if (event.recurrenceDaysOfWeek() != null && !event.recurrenceDaysOfWeek().isEmpty()) {
+            rule.append(";BYDAY=").append(event.recurrenceDaysOfWeek().stream()
+                    .map(day -> day.name().substring(0, 2))
+                    .collect(java.util.stream.Collectors.joining(",")));
+            rule.append(";WKST=SU");
+        }
         if (event.recurrenceEndDate() != null) {
             String until = event.allDay()
                     ? event.recurrenceEndDate().format(DateTimeFormatter.BASIC_ISO_DATE)

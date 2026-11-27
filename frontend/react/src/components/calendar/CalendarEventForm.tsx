@@ -8,13 +8,14 @@ import {
 import { alpha, useTheme } from '@mui/material/styles';
 import type { Theme } from '@mui/material/styles';
 import { useRef, useState } from 'react';
-import { CalendarEvent, CalendarEventInput, CalendarEventStatus, RecurrenceFrequency, RecurrenceUnit } from '../../types/CalendarEvent';
+import { CalendarEvent, CalendarEventInput, CalendarEventStatus } from '../../types/CalendarEvent';
 import { Calendar, calendarColorHex } from '../../types/Calendar';
 import { readEventTimePreferences, saveEventTimePreferences } from '../../services/utils/inputPreferences';
 import { AppDateField, AppTimeField } from '../input/AppPickerFields';
-import { AppNumberField } from '../input/AppNumberField';
 import { useKeyboardDelete } from '../../hooks/useKeyboardDelete';
 import { TaskReminderPicker } from '../task/TaskReminderPicker';
+import { RepeatEditor } from '../task/when/RepeatEditor';
+import { fieldsFromRepeatRule, repeatRuleFromFields, type RepeatRule } from '../../../../shared/repeatRule.ts';
 import { CalendarChipSelect, CalendarSelect } from './CalendarSelect';
 import { ActivityPicker } from '../activity/ActivityPicker';
 import { useActivities } from '../../hooks/useActivities';
@@ -45,19 +46,7 @@ type Props = {
 
 type DeleteScope = 'occurrence' | 'future' | 'all';
 
-const RECURRENCE_OPTIONS: { value: RecurrenceFrequency; label: string }[] = [
-    { value: 'NONE', label: 'Does not repeat' },
-    { value: 'DAILY', label: 'Daily' },
-    { value: 'WEEKLY', label: 'Weekly' },
-    { value: 'MONTHLY', label: 'Monthly' },
-    { value: 'CUSTOM', label: 'Custom…' },
-];
 
-const RECURRENCE_UNIT_OPTIONS: { value: RecurrenceUnit; label: string }[] = [
-    { value: 'DAYS', label: 'days' },
-    { value: 'WEEKS', label: 'weeks' },
-    { value: 'MONTHS', label: 'months' },
-];
 
 const STATUS_OPTIONS: { value: CalendarEventStatus; label: string }[] = [
     { value: 'CONFIRMED', label: 'Confirmed' },
@@ -158,12 +147,9 @@ export function CalendarEventForm({
     const [startTime, setStartTime] = useState(localTimePart(event?.startTime, rememberedTimes.startTime ?? '17:00'));
     const [endTime, setEndTime] = useState(localTimePart(event?.endTime, rememberedTimes.endTime ?? '18:00'));
     const [status, setStatus] = useState<CalendarEventStatus>(occurrenceStatus ?? event?.status ?? 'CONFIRMED');
-    const [recurrenceFrequency, setRecurrenceFrequency] = useState<RecurrenceFrequency>(
-        event?.recurrenceFrequency ?? 'NONE'
-    );
-    const [recurrenceInterval, setRecurrenceInterval] = useState(event?.recurrenceInterval ?? 1);
-    const [recurrenceUnit, setRecurrenceUnit] = useState<RecurrenceUnit>(event?.recurrenceUnit ?? 'WEEKS');
-    const [recurrenceEndDate, setRecurrenceEndDate] = useState(event?.recurrenceEndDate ?? '');
+    const [repeat, setRepeat] = useState<RepeatRule>(() => repeatRuleFromFields(event));
+    const recurrenceFields = fieldsFromRepeatRule(repeat);
+    const recurrenceFrequency = recurrenceFields.recurrenceFrequency;
     const [reminderMinutes, setReminderMinutes] = useState<number | null>(event?.reminderMinutesBefore ?? 1440);
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -213,11 +199,6 @@ export function CalendarEventForm({
             setError('Add a title for the event.');
             return null;
         }
-        if (recurrenceFrequency === 'CUSTOM'
-            && (!Number.isInteger(recurrenceInterval) || recurrenceInterval < 1 || recurrenceInterval > 999)) {
-            setError('Custom repeat must be between 1 and 999.');
-            return null;
-        }
 
         let startInstant: string | null = null;
         let endInstant: string | null = null;
@@ -247,10 +228,8 @@ export function CalendarEventForm({
             endTime: endInstant,
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
             status: isRepeatingOccurrence ? event!.status : status,
-            recurrenceFrequency,
-            recurrenceEndDate: recurrenceFrequency === 'NONE' || !recurrenceEndDate ? null : recurrenceEndDate,
-            recurrenceInterval: recurrenceFrequency === 'CUSTOM' ? recurrenceInterval : null,
-            recurrenceUnit: recurrenceFrequency === 'CUSTOM' ? recurrenceUnit : null,
+            ...recurrenceFields,
+            recurrenceDaysOfWeek: recurrenceFields.recurrenceDaysOfWeek ?? [],
             reminderMinutesBefore: reminderMinutes,
         };
     };
@@ -483,36 +462,14 @@ export function CalendarEventForm({
             </Stack>
 
             {!hideRecurrenceFields && (
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                    <TextField select label="Repeat" value={recurrenceFrequency} autoComplete="off"
-                               onChange={e => {
-                                   markAutoSaveDirty();
-                                   const nextFrequency = e.target.value as RecurrenceFrequency;
-                                   setRecurrenceFrequency(nextFrequency);
-                                   if (nextFrequency === 'NONE') setRecurrenceEndDate('');
-                               }} fullWidth>
-                        {RECURRENCE_OPTIONS.map(option => (
-                            <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                        ))}
-                    </TextField>
-                    {recurrenceFrequency === 'CUSTOM' && (
-                        <>
-                            <AppNumberField label="Every" value={recurrenceInterval} autoComplete="off"
-                                       onChange={e => { markAutoSaveDirty(); setRecurrenceInterval(Number(e.target.value)); }}
-                                       onStepValueChange={value => { markAutoSaveDirty(); setRecurrenceInterval(value); }}
-                                       min={1} max={999} step={1} fullWidth />
-                            <TextField select label="Unit" value={recurrenceUnit} autoComplete="off"
-                                       onChange={e => { markAutoSaveDirty(); setRecurrenceUnit(e.target.value as RecurrenceUnit); }} fullWidth>
-                                {RECURRENCE_UNIT_OPTIONS.map(option => (
-                                    <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                                ))}
-                            </TextField>
-                        </>
-                    )}
-                    {recurrenceFrequency !== 'NONE' && (
-                        <AppDateField label="Repeat until (optional)" value={recurrenceEndDate} onChange={value => { markAutoSaveDirty(); setRecurrenceEndDate(value); }} />
-                    )}
-                </Stack>
+                <Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>Repeat</Typography>
+                    <RepeatEditor
+                        value={repeat}
+                        startDate={startDate}
+                        onChange={next => { markAutoSaveDirty(); setRepeat(next); }}
+                    />
+                </Box>
             )}
 
             <TaskReminderPicker

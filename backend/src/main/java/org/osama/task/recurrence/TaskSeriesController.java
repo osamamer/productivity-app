@@ -44,6 +44,15 @@ public class TaskSeriesController {
                 seriesId, request.getImportance(), currentUserService.getCurrentUserId()));
     }
 
+    @PatchMapping("/{seriesId}/reminder")
+    public ResponseEntity<TaskSeriesResponse> updateSeriesReminder(
+            @PathVariable String seriesId,
+            @RequestBody TaskSeriesReminderRequest request
+    ) {
+        return ResponseEntity.ok(taskSeriesService.updateReminder(
+                seriesId, request.getReminderMinutesBefore(), currentUserService.getCurrentUserId()));
+    }
+
     @DeleteMapping("/{seriesId}")
     public ResponseEntity<Void> stopSeries(@PathVariable String seriesId) {
         taskSeriesService.stopSeries(seriesId, currentUserService.getCurrentUserId());

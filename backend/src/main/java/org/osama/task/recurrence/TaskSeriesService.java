@@ -224,6 +224,32 @@ public class TaskSeriesService {
         return toResponse(saved, userId);
     }
 
+    /**
+     * Sets the reminder of the series and of every unfinished occurrence from now on; past and completed
+     * occurrences keep theirs.
+     */
+    @Transactional
+    public TaskSeriesResponse updateReminder(String seriesId, Integer reminderMinutesBefore, String userId) {
+        TaskSeries series = seriesRepository.lockBySeriesIdAndUserId(seriesId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Task series not found: " + seriesId));
+        series.setReminderMinutesBefore(reminderMinutesBefore);
+        TaskSeries saved = seriesRepository.save(series);
+        LocalDateTime now = LocalDateTime.now(ZoneId.of(series.getTimeZone()));
+        List<Task> upcoming = taskRepository.findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(seriesId, userId)
+                .stream()
+                .filter(task -> !task.isCompleted() && task.getScheduledPerformDateTime() != null
+                        && task.getScheduledPerformDateTime().isAfter(now))
+                .toList();
+        upcoming.forEach(task -> {
+            UpdateTaskRequest update = new UpdateTaskRequest();
+            update.setReminderMinutesBefore(reminderMinutesBefore);
+            taskService.updateTask(task.getTaskId(), update, userId);
+        });
+        log.info("Task series reminder updated: userId={} seriesId={} minutesBefore={} occurrenceCount={}",
+                userId, seriesId, reminderMinutesBefore, upcoming.size());
+        return toResponse(saved, userId);
+    }
+
     private void updateOccurrenceImportance(String seriesId, String userId, int importance) {
         List<Task> occurrences = taskRepository.findAllByTaskSeriesIdAndUserIdOrderBySeriesOccurrenceAtAsc(
                 seriesId, userId);
@@ -505,9 +531,8 @@ public class TaskSeriesService {
             throw new IllegalArgumentException("A custom recurrence needs an interval between 1 and 999 and a unit.");
         }
         if (daysOfWeek != null && !daysOfWeek.isEmpty()) {
-            if (frequency != TaskRecurrenceFrequency.CUSTOM
-                    || interval == null || interval != 1 || unit != TaskRecurrenceUnit.WEEKS) {
-                throw new IllegalArgumentException("Selected weekdays require a weekly custom recurrence.");
+            if (frequency != TaskRecurrenceFrequency.CUSTOM || unit != TaskRecurrenceUnit.WEEKS) {
+                throw new IllegalArgumentException("Selected weekdays require a recurrence counted in weeks.");
             }
             if (daysOfWeek.stream().anyMatch(day -> day == null)
                     || daysOfWeek.stream().distinct().count() != daysOfWeek.size()) {

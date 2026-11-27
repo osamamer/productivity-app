@@ -69,7 +69,7 @@ class CalendarEventIcsExporterTest {
                                         List<CalendarEventOccurrenceResponse> overrides) {
         return new CalendarEventResponse("event-1", "Planning session", "Plan the week.", allDay,
                 startDate, endDate, startTime, endTime, timeZone, CalendarEventStatus.CONFIRMED,
-                frequency, recurrenceEndDate, interval, unit, cancelledKeys, overrides, null,
+                frequency, recurrenceEndDate, interval, unit, List.of(), cancelledKeys, overrides, null,
                 Instant.parse("2026-10-01T00:00:00Z"), Instant.parse("2026-10-01T00:00:00Z"),
                 "calendar-1", null, null, null);
     }

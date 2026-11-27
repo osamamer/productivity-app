@@ -1,6 +1,7 @@
 package org.osama.event;
 
 import org.osama.activity.ActivityService;
+import org.osama.recurrence.RecurrenceDays;
 import org.osama.task.Task;
 import org.osama.task.TaskRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +14,7 @@ import org.osama.user.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.DayOfWeek;
 import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -434,6 +436,19 @@ public class CalendarEventService {
         event.setRecurrenceUnit(recurrenceFrequency == RecurrenceFrequency.CUSTOM
                 ? request.getRecurrenceUnit()
                 : null);
+        event.setRecurrenceDaysOfWeek(recurrenceDaysOfWeek(request, recurrenceFrequency));
+    }
+
+    private String recurrenceDaysOfWeek(CalendarEventRequest request, RecurrenceFrequency frequency) {
+        List<DayOfWeek> days = request.getRecurrenceDaysOfWeek();
+        if (days == null || days.isEmpty()) return null;
+        if (frequency != RecurrenceFrequency.CUSTOM || request.getRecurrenceUnit() != RecurrenceUnit.WEEKS) {
+            throw new IllegalArgumentException("Selected weekdays require a recurrence counted in weeks.");
+        }
+        if (days.stream().anyMatch(java.util.Objects::isNull) || days.stream().distinct().count() != days.size()) {
+            throw new IllegalArgumentException("Recurrence weekdays must be unique and valid.");
+        }
+        return RecurrenceDays.encode(days);
     }
 
     private String normalizeOccurrenceKey(CalendarEventOccurrenceRequest request) {
@@ -505,13 +520,14 @@ public class CalendarEventService {
             return new CalendarEventResponse(event.getId(), event.getTitle(), event.getDescription(),
                     event.isAllDay(), event.getStartDate(), event.getEndDate(), event.getStartTime(),
                     event.getEndTime(), event.getTimeZone(), event.getStatus(), event.getRecurrenceFrequency(),
-                    null, null, null, List.of(), List.of(), reminderMinutes,
+                    null, null, null, List.of(), List.of(), List.of(), reminderMinutes,
                     event.getCreatedAt(), event.getUpdatedAt(), event.getCalendarId(), event.getSourceId(), event.getActivityId(), event.getTaskId());
         }
         return new CalendarEventResponse(event.getId(), event.getTitle(), event.getDescription(),
                 event.isAllDay(), event.getStartDate(), event.getEndDate(), event.getStartTime(),
                 event.getEndTime(), event.getTimeZone(), event.getStatus(), event.getRecurrenceFrequency(),
                 event.getRecurrenceEndDate(), event.getRecurrenceInterval(), event.getRecurrenceUnit(),
+                RecurrenceDays.decode(event.getRecurrenceDaysOfWeek()),
                 occurrenceOverrides.stream()
                         .filter(override -> !override.isDeleted()
                                 && override.getOccurrenceStatus() == CalendarEventStatus.CANCELLED)

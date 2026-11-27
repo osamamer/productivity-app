@@ -1,12 +1,13 @@
 package org.osama.task.recurrence;
 
+import org.osama.recurrence.WeekdayRecurrence;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.List;
 
 public final class TaskRecurrenceCalculator {
@@ -55,11 +56,9 @@ public final class TaskRecurrenceCalculator {
     private static LocalDateTime nextCustomWeekdayOccurrence(TaskSeries series, LocalDateTime current) {
         List<java.time.DayOfWeek> days = TaskRecurrenceDays.decode(series.getRecurrenceDaysOfWeek());
         ZonedDateTime currentZoned = current.atZone(zoneFor(series));
-        for (int offset = 1; offset <= 7; offset++) {
-            ZonedDateTime candidate = currentZoned.plusDays(offset);
-            if (days.contains(candidate.getDayOfWeek())) return candidate.toLocalDateTime();
-        }
-        throw new IllegalArgumentException("A custom recurrence needs at least one day of the week.");
+        LocalDate nextDate = WeekdayRecurrence.next(series.getStartDateTime().toLocalDate(),
+                currentZoned.toLocalDate(), days, requireInterval(series));
+        return ZonedDateTime.of(nextDate, currentZoned.toLocalTime(), currentZoned.getZone()).toLocalDateTime();
     }
 
     private static LocalDateTime nextMonthOccurrence(TaskSeries series, ZonedDateTime current, int interval) {
@@ -94,7 +93,8 @@ public final class TaskRecurrenceCalculator {
 
     private static boolean isAllowedByWeekday(TaskSeries series, LocalDateTime occurrence) {
         return !hasCustomWeekdays(series)
-                || TaskRecurrenceDays.contains(series.getRecurrenceDaysOfWeek(), occurrence.getDayOfWeek());
+                || WeekdayRecurrence.isOccurrence(series.getStartDateTime().toLocalDate(), occurrence.toLocalDate(),
+                        TaskRecurrenceDays.decode(series.getRecurrenceDaysOfWeek()), requireInterval(series));
     }
 
     private static boolean hasCustomWeekdays(TaskSeries series) {

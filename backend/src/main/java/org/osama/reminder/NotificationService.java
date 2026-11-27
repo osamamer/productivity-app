@@ -4,6 +4,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.osama.event.CalendarEvent;
 import org.osama.event.CalendarEventCancellationRepository;
 import org.osama.event.RecurrenceFrequency;
+import org.osama.recurrence.RecurrenceDays;
+import org.osama.recurrence.WeekdayRecurrence;
 import org.osama.exceptions.ResourceNotFoundException;
 import org.osama.mentalstate.MentalStateCheckInRepository;
 import org.osama.pomodoro.PomodoroTransition;
@@ -349,7 +351,7 @@ public class NotificationService {
             }
             case CUSTOM -> switch (event.getRecurrenceUnit()) {
                 case DAYS -> current.plusDays(event.getRecurrenceInterval());
-                case WEEKS -> current.plusWeeks(event.getRecurrenceInterval());
+                case WEEKS -> nextWeeklyOccurrence(event, current, zone);
                 case MONTHS -> {
                     LocalDate anchorDate = event.isAllDay()
                             ? event.getStartDate()
@@ -361,6 +363,17 @@ public class NotificationService {
             };
             case NONE -> throw new IllegalStateException("A non-recurring event has no next occurrence.");
         };
+    }
+
+    private ZonedDateTime nextWeeklyOccurrence(CalendarEvent event, ZonedDateTime current, ZoneId zone) {
+        List<java.time.DayOfWeek> days = RecurrenceDays.decode(event.getRecurrenceDaysOfWeek());
+        if (days.isEmpty()) return current.plusWeeks(event.getRecurrenceInterval());
+        LocalDate anchorDate = event.isAllDay()
+                ? event.getStartDate()
+                : event.getStartTime().atZone(zone).toLocalDate();
+        LocalDate nextDate = WeekdayRecurrence.next(anchorDate, current.toLocalDate(), days,
+                event.getRecurrenceInterval());
+        return ZonedDateTime.of(nextDate, current.toLocalTime(), zone);
     }
 
     public void createPomodoroNotification(ScheduledJob job, String taskName, PomodoroTransition transition) {

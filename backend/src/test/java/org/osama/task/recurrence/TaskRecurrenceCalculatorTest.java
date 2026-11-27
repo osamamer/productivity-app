@@ -82,6 +82,46 @@ class TaskRecurrenceCalculatorTest {
         );
     }
 
+    @Test
+    void weekdaysEveryTwoWeeksSkipTheWeeksInBetweenWithWeeksStartingOnSunday() {
+        // Thursday 2 Jan 2025; Sunday 5 Jan opens the next week, which is skipped.
+        TaskSeries series = series(LocalDateTime.of(2025, 1, 2, 8, 0));
+        series.setRecurrenceFrequency(TaskRecurrenceFrequency.CUSTOM);
+        series.setRecurrenceInterval(2);
+        series.setRecurrenceUnit(TaskRecurrenceUnit.WEEKS);
+        series.setRecurrenceDaysOfWeek("SUNDAY,THURSDAY");
+
+        assertEquals(
+                List.of(
+                        LocalDateTime.of(2025, 1, 2, 8, 0),
+                        LocalDateTime.of(2025, 1, 12, 8, 0),
+                        LocalDateTime.of(2025, 1, 16, 8, 0),
+                        LocalDateTime.of(2025, 1, 26, 8, 0)
+                ),
+                TaskRecurrenceCalculator.occurrencesBetween(
+                        series,
+                        series.getStartDateTime(),
+                        LocalDateTime.of(2025, 1, 27, 0, 0))
+        );
+    }
+
+    @Test
+    void aStartOnAnUnselectedDayIsNotAnOccurrence() {
+        TaskSeries series = series(LocalDateTime.of(2025, 1, 3, 8, 0));
+        series.setRecurrenceFrequency(TaskRecurrenceFrequency.CUSTOM);
+        series.setRecurrenceInterval(1);
+        series.setRecurrenceUnit(TaskRecurrenceUnit.WEEKS);
+        series.setRecurrenceDaysOfWeek("MONDAY");
+
+        assertEquals(
+                List.of(LocalDateTime.of(2025, 1, 6, 8, 0)),
+                TaskRecurrenceCalculator.occurrencesBetween(
+                        series,
+                        series.getStartDateTime(),
+                        LocalDateTime.of(2025, 1, 7, 0, 0))
+        );
+    }
+
     private TaskSeries series(LocalDateTime start) {
         TaskSeries series = new TaskSeries();
         series.setStartDateTime(start);

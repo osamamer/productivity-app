@@ -3,6 +3,8 @@ import { StyleSheet, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { titleFontSize } from '../../../../shared/titleFontSize';
+import { fieldsFromRepeatRule, NO_REPEAT, repeatRuleFromFields } from '../../../../shared/repeatRule';
+import { scheduleOf, seriesStartFor, whenDraftFromSchedule, type WhenChange } from '../../../../shared/whenDraft';
 import { taskSeriesTimeUpdate } from '@/lib/taskSeriesTime';
 import { useTaskWorkspace } from '@/providers/TaskWorkspaceProvider';
 import { reportError } from '@/lib/errors';
@@ -11,7 +13,7 @@ import { TASK_PRIORITY_OPTIONS, taskPriorityColor, taskPriorityValue } from '@/l
 import { useAppPopup } from '@/providers/PopupProvider';
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { api } from '@/services/api';
-import type { Calendar, Task, TaskRecurrenceFrequency, TaskSeries } from '@/types/models';
+import type { Calendar, Task, TaskSeries } from '@/types/models';
 import { AppButton } from '../ui/AppButton';
 import { AppInput } from '../ui/AppInput';
 import { AppPopup } from '../ui/AppPopup';
@@ -19,8 +21,7 @@ import { AppText } from '../ui/AppText';
 import { ChoiceChips } from '../ui/ChoiceChips';
 import { ModalSheet } from '../ui/ModalSheet';
 import { SilentPressable } from '../ui/SilentPressable';
-import { TaskScheduleField } from './TaskScheduleField';
-import { TaskReminderField } from './TaskReminderField';
+import { TaskWhenField } from './when/TaskWhenField';
 import { CalendarDestinationField } from '../calendar/CalendarControls';
 
 function titleSize(name: string) {
@@ -56,7 +57,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   const [deletePromptOpen, setDeletePromptOpen] = useState(false);
   const [series, setSeries] = useState<TaskSeries | null>(() => task ? getCachedTaskDetails(task.taskId)?.taskSeries ?? null : null);
   const scheduleValueRef = useRef(task?.scheduledPerformDateTime ?? '');
-  const [repeat, setRepeat] = useState<TaskRecurrenceFrequency>('NONE');
   const [subtasks, setSubtasks] = useState<Task[]>(() => task && !task.parentId
     ? getCachedTaskDetails(task.taskId)?.subtasks ?? []
     : []);
@@ -74,9 +74,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
   const subtaskInputRef = useRef<TextInput>(null);
   const pendingSubtaskIdRef = useRef<string | null>(null);
   const seriesRef = useRef<TaskSeries | null>(null);
-  const repeatRef = useRef<TaskRecurrenceFrequency>('NONE');
-  const recurrenceMutationRef = useRef<Promise<void>>(Promise.resolve());
-  const recurrenceRequestIdRef = useRef(0);
   const [previousTaskId, setPreviousTaskId] = useState(task?.taskId);
 
   if (previousTaskId !== task?.taskId) {
@@ -138,9 +135,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
       if (!nextSeries) return;
       seriesRef.current = nextSeries;
       setSeries(nextSeries);
-      const nextRepeat = nextSeries.active ? nextSeries.recurrenceFrequency : 'NONE';
-      repeatRef.current = nextRepeat;
-      setRepeat(nextRepeat);
     };
     const cached = getCachedTaskDetails(taskId);
     if (cached) applySeries(cached.taskSeries);
@@ -164,7 +158,6 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     setSaving(true);
     setError(null);
     try {
-      await recurrenceMutationRef.current;
       const updated = await api.tasks.update(task.taskId, {
         name: name.trim(),
         scheduledPerformDateTime: scheduleValueRef.current,
@@ -357,93 +350,77 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
     void confirmDelete('series');
   }
 
-  function changeRepeat(nextRepeat: TaskRecurrenceFrequency, scheduleOverride = scheduledPerformDateTime) {
-    if (!task || task.parentId) return;
-    const previousRepeat = repeatRef.current;
-    const previousSeries = seriesRef.current;
-    const requestId = recurrenceRequestIdRef.current + 1;
-    recurrenceRequestIdRef.current = requestId;
-    repeatRef.current = nextRepeat;
-    setRepeat(nextRepeat);
+  const whenValue = whenDraftFromSchedule(
+    scheduledPerformDateTime,
+    reminderMinutesBefore,
+    series?.active ? repeatRuleFromFields(series) : NO_REPEAT,
+    series?.active ? Boolean(series.repeatSubtasks) : false,
+  );
+
+  /** Saves the When sheet at once, like the web: a series change cannot wait for "Save changes". */
+  async function applyWhen(change: WhenChange) {
+    if (!task) return;
+    const { next } = change;
+    const schedule = scheduleOf(next);
+    const currentSeries = seriesRef.current?.active ? seriesRef.current : null;
+    const timeZone = currentSeries?.timeZone ?? (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
     setError(null);
-
-    recurrenceMutationRef.current = recurrenceMutationRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        if (requestId !== recurrenceRequestIdRef.current) return;
-        const currentSeries = seriesRef.current;
-        if (nextRepeat === 'NONE') {
-          if (!currentSeries?.active) return;
-          await api.tasks.stopRecurrence(currentSeries.seriesId);
-          if (requestId !== recurrenceRequestIdRef.current) return;
-          const stoppedSeries = { ...currentSeries, active: false };
-          seriesRef.current = stoppedSeries;
-          setSeries(stoppedSeries);
-          onUpdated({ ...task, taskSeriesId: stoppedSeries.seriesId });
-          return;
+    try {
+      if (change.scheduleChanged) {
+        if (currentSeries && change.scheduleScope === 'all' && schedule) {
+          const saved = await api.tasks.updateRecurrence(currentSeries.seriesId, {
+            ...taskSeriesTimeUpdate(currentSeries, schedule),
+            startDateTime: seriesStartFor(change, whenValue, currentSeries.startDateTime),
+          });
+          seriesRef.current = saved;
+          setSeries(saved);
+        } else {
+          await api.tasks.update(task.taskId, {
+            scheduledPerformDateTime: schedule,
+            ...(schedule ? {} : { reminderMinutesBefore: null }),
+          });
         }
-
-        if (!scheduleOverride) return;
-        const recurrence = {
-          recurrenceFrequency: nextRepeat,
-          recurrenceEndDate: null,
-          recurrenceInterval: null,
-          recurrenceUnit: null,
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-        } as const;
-        const nextSeries = currentSeries
-          ? await api.tasks.updateRecurrence(currentSeries.seriesId, { ...recurrence, active: true })
-          : await api.tasks.startRecurrence(task.taskId, recurrence);
-        if (requestId !== recurrenceRequestIdRef.current) return;
-        seriesRef.current = nextSeries;
-        setSeries(nextSeries);
-        onUpdated({ ...task, taskSeriesId: nextSeries.seriesId });
-      })
-      .catch(cause => {
-        if (requestId !== recurrenceRequestIdRef.current) return;
-        repeatRef.current = previousRepeat;
-        seriesRef.current = previousSeries;
-        setRepeat(previousRepeat);
-        setError(reportError('Could not update repeat settings', cause));
-      });
-  }
-
-  function changeSeriesTime(value: string) {
-    const currentSeries = seriesRef.current;
-    if (!task || !currentSeries?.active) return;
-    const update = taskSeriesTimeUpdate(currentSeries, value);
-    const requestId = ++recurrenceRequestIdRef.current;
-    setSeries({ ...currentSeries, startDateTime: update.startDateTime });
-    setError(null);
-    recurrenceMutationRef.current = recurrenceMutationRef.current
-      .catch(() => undefined)
-      .then(async () => {
-        const saved = await api.tasks.updateRecurrence(currentSeries.seriesId, update);
-        seriesRef.current = saved;
-        if (requestId !== recurrenceRequestIdRef.current) return;
-        setSeries(saved);
-        const updatedTask = await api.tasks.get(task.taskId);
-        if (requestId !== recurrenceRequestIdRef.current) return;
-        if (scheduleValueRef.current === task.scheduledPerformDateTime) {
-          scheduleValueRef.current = updatedTask.scheduledPerformDateTime ?? '';
-          setScheduledPerformDateTime(scheduleValueRef.current);
+      }
+      const reminderForWholeSeries = Boolean(currentSeries) && change.reminderScope === 'all';
+      if (change.reminderChanged && !reminderForWholeSeries) {
+        await api.tasks.update(task.taskId, { reminderMinutesBefore: next.reminderMinutesBefore });
+      }
+      if (change.repeatChanged && !task.parentId) {
+        const fields = fieldsFromRepeatRule(next.repeat);
+        if (fields.recurrenceFrequency === 'NONE') {
+          if (currentSeries) {
+            await api.tasks.stopRecurrence(currentSeries.seriesId);
+            const stopped = { ...currentSeries, active: false };
+            seriesRef.current = stopped;
+            setSeries(stopped);
+          }
+        } else if (schedule) {
+          const recurrence = {
+            ...fields,
+            recurrenceFrequency: fields.recurrenceFrequency,
+            recurrenceDaysOfWeek: fields.recurrenceDaysOfWeek ?? [],
+            timeZone,
+            repeatSubtasks: next.repeatSubtasks,
+          };
+          const saved = seriesRef.current?.active
+            ? await api.tasks.updateRecurrence(seriesRef.current.seriesId, { ...recurrence, active: true })
+            : await api.tasks.startRecurrence(task.taskId, recurrence);
+          seriesRef.current = saved;
+          setSeries(saved);
         }
-        onUpdated(updatedTask);
-        await refreshWorkspace();
-      })
-      .catch(cause => {
-        if (requestId === recurrenceRequestIdRef.current) {
-          setSeries(seriesRef.current);
-          setError(reportError('Could not change series time', cause));
-        } else console.error('Could not change series time:', cause);
-      });
-  }
-
-  function handleScheduledChange(nextScheduledPerformDateTime: string) {
-    scheduleValueRef.current = nextScheduledPerformDateTime;
-    setScheduledPerformDateTime(nextScheduledPerformDateTime);
-    if (nextScheduledPerformDateTime && repeatRef.current !== 'NONE' && !seriesRef.current) {
-      changeRepeat(repeatRef.current, nextScheduledPerformDateTime);
+      }
+      if (change.reminderChanged && reminderForWholeSeries && currentSeries) {
+        await api.tasks.updateRecurrenceReminder(currentSeries.seriesId, next.reminderMinutesBefore);
+      }
+      const updated = await api.tasks.get(task.taskId);
+      scheduleValueRef.current = updated.scheduledPerformDateTime ?? '';
+      setScheduledPerformDateTime(scheduleValueRef.current);
+      setReminderMinutesBefore(updated.reminderMinutesBefore ?? null);
+      onUpdated(updated);
+      await refreshWorkspace();
+    } catch (cause) {
+      setError(reportError('Could not save the date, reminder or repeat', cause));
+      throw cause;
     }
   }
 
@@ -541,32 +518,12 @@ export function TaskDetailSheet({ task, onClose, onUpdated, onDeleted, onDeleted
           {subtaskError && <AppText variant="caption" color="danger">{subtaskError}</AppText>}
         </View>
       )}
-      <TaskScheduleField
-        value={scheduledPerformDateTime}
-        onChange={handleScheduledChange}
-      />
-      {!task?.parentId && (
-        <View style={styles.repeatSection}>
-          <AppText variant="label">Repeat</AppText>
-          <ChoiceChips value={repeat} onChange={changeRepeat} options={[
-            { value: 'NONE' as const, label: 'Never' },
-            { value: 'DAILY' as const, label: 'Daily' },
-            { value: 'WEEKLY' as const, label: 'Weekly' },
-            { value: 'MONTHLY' as const, label: 'Monthly' },
-          ]} />
-        </View>
-      )}
-      {series?.active && !task?.parentId && (
-        <View style={{ gap: 8 }}>
-          <TaskScheduleField label="Series time" timeOnly value={series.startDateTime} onChange={changeSeriesTime} />
-          <AppText variant="caption" color="muted">Changes upcoming incomplete occurrences. Past and completed tasks keep their original times.</AppText>
-        </View>
-      )}
-      <TaskReminderField
-        value={reminderMinutesBefore}
-        scheduledDateTime={scheduledPerformDateTime}
-        onChange={setReminderMinutesBefore}
-      />
+      <TaskWhenField
+        value={whenValue}
+        repeating={Boolean(series?.active)}
+        canRepeat={!task?.parentId}
+        showRepeatSubtasks={subtasks.length > 0}
+        onSave={applyWhen} />
       <AppText variant="label">Priority</AppText>
           <ChoiceChips value={importance} onChange={handlePriorityChange} options={[...TASK_PRIORITY_OPTIONS]} fillSelected />
       {error && <AppText color="danger">{error}</AppText>}

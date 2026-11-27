@@ -18,7 +18,9 @@ import org.springframework.test.context.support.DependencyInjectionTestExecution
 import org.springframework.test.context.transaction.TransactionalTestExecutionListener;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.DayOfWeek;
 import java.time.Instant;
+import java.util.List;
 import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -204,6 +206,32 @@ class CalendarEventServiceTest {
         assertEquals(RecurrenceFrequency.CUSTOM, event.recurrenceFrequency());
         assertEquals(2, event.recurrenceInterval());
         assertEquals(RecurrenceUnit.WEEKS, event.recurrenceUnit());
+    }
+
+    @Test
+    void anEventCanRepeatEveryFewWeeksOnChosenDays() {
+        CalendarEventRequest request = timedRequest(
+                Instant.parse("2027-01-10T10:00:00Z"), Instant.parse("2027-01-10T11:00:00Z"));
+        request.setRecurrenceFrequency(RecurrenceFrequency.CUSTOM);
+        request.setRecurrenceInterval(2);
+        request.setRecurrenceUnit(RecurrenceUnit.WEEKS);
+        request.setRecurrenceDaysOfWeek(List.of(DayOfWeek.THURSDAY, DayOfWeek.SUNDAY));
+
+        CalendarEventResponse event = eventService.createEvent(request, USER_ID);
+
+        assertEquals(List.of(DayOfWeek.SUNDAY, DayOfWeek.THURSDAY), event.recurrenceDaysOfWeek());
+    }
+
+    @Test
+    void chosenDaysNeedARecurrenceCountedInWeeks() {
+        CalendarEventRequest request = timedRequest(
+                Instant.parse("2027-01-10T10:00:00Z"), Instant.parse("2027-01-10T11:00:00Z"));
+        request.setRecurrenceFrequency(RecurrenceFrequency.CUSTOM);
+        request.setRecurrenceInterval(2);
+        request.setRecurrenceUnit(RecurrenceUnit.DAYS);
+        request.setRecurrenceDaysOfWeek(List.of(DayOfWeek.MONDAY));
+
+        assertThrows(IllegalArgumentException.class, () -> eventService.createEvent(request, USER_ID));
     }
 
     @Test

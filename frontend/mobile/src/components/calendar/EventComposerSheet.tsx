@@ -8,7 +8,9 @@ import { readEventTimePreferences, saveEventTimePreferences } from '@/lib/inputP
 import { useAppTheme } from '@/providers/ThemeProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { api } from '@/services/api';
-import type { Calendar, CalendarEvent, CalendarEventInput, CalendarEventStatus, RecurrenceFrequency, RecurrenceUnit } from '@/types/models';
+import type { Calendar, CalendarEvent, CalendarEventInput, CalendarEventStatus } from '@/types/models';
+import { fieldsFromRepeatRule, repeatRuleFromFields, type RepeatRule } from '../../../../shared/repeatRule';
+import { RepeatEditor } from '@/components/tasks/when/RepeatEditor';
 import { AppButton } from '../ui/AppButton';
 import { CalendarDatePicker } from '../ui/CalendarDatePicker';
 import { AppInput } from '../ui/AppInput';
@@ -174,10 +176,7 @@ function eventDefaults(event: CalendarEvent | null | undefined, initialDate?: st
     allDay: event?.allDay ? 'yes' as const : 'no' as const,
     startTime: eventTimeInDeviceZone(event?.startTime ?? null, event?.timeZone, '17:00'),
     endTime: eventTimeInDeviceZone(event?.endTime ?? null, event?.timeZone, '18:00'),
-    recurrence: event?.recurrenceFrequency ?? 'NONE' as RecurrenceFrequency,
-    recurrenceEndDate: event?.recurrenceEndDate ?? '',
-    recurrenceInterval: event?.recurrenceInterval ?? 1,
-    recurrenceUnit: event?.recurrenceUnit ?? 'WEEKS' as RecurrenceUnit,
+    repeat: repeatRuleFromFields(event),
     status: selectedOccurrenceStatus ?? event?.status ?? 'CONFIRMED' as CalendarEventStatus,
     reminder: event
       ? event.reminderMinutesBefore === null
@@ -278,10 +277,9 @@ export function EventComposerSheet({
   const [allDay, setAllDay] = useState<'yes' | 'no'>(defaults.allDay);
   const [startTime, setStartTime] = useState(defaults.startTime);
   const [endTime, setEndTime] = useState(defaults.endTime);
-  const [recurrence, setRecurrence] = useState<RecurrenceFrequency>(defaults.recurrence);
-  const [recurrenceEndDate, setRecurrenceEndDate] = useState(defaults.recurrenceEndDate);
-  const [recurrenceInterval, setRecurrenceInterval] = useState(defaults.recurrenceInterval);
-  const [recurrenceUnit, setRecurrenceUnit] = useState<RecurrenceUnit>(defaults.recurrenceUnit);
+  const [repeat, setRepeat] = useState<RepeatRule>(defaults.repeat);
+  const recurrenceFields = fieldsFromRepeatRule(repeat);
+  const recurrence = recurrenceFields.recurrenceFrequency;
   const [status, setStatus] = useState<CalendarEventStatus>(defaults.status);
   const [reminder, setReminder] = useState<ReminderValue>(defaults.reminder);
   const initialCustomReminderTime = () => reminderTimeForEvent(
@@ -330,10 +328,7 @@ export function EventComposerSheet({
     setAllDay(next.allDay);
     setStartTime(next.startTime);
     setEndTime(next.endTime);
-    setRecurrence(next.recurrence);
-    setRecurrenceEndDate(next.recurrenceEndDate);
-    setRecurrenceInterval(next.recurrenceInterval);
-    setRecurrenceUnit(next.recurrenceUnit);
+    setRepeat(next.repeat);
     setStatus(next.status);
     setReminder(next.reminder);
     setCustomReminderOpen(false);
@@ -395,12 +390,8 @@ export function EventComposerSheet({
     if (allDay === 'yes' && (!isCalendarDate(endDate) || endDate < date)) {
       return setError('The finish date must be on or after the start date.');
     }
-    if (recurrence === 'CUSTOM'
-      && (!Number.isInteger(recurrenceInterval) || recurrenceInterval < 1 || recurrenceInterval > 999)) {
-      return setError('Custom repeat must be between 1 and 999.');
-    }
-    if (recurrence !== 'NONE' && recurrenceEndDate
-      && (!isCalendarDate(recurrenceEndDate) || recurrenceEndDate < date)) {
+    if (recurrence !== 'NONE' && repeat.until
+      && (!isCalendarDate(repeat.until) || repeat.until < date)) {
       return setError('The repeat-until date must be on or after the event date.');
     }
 
@@ -437,10 +428,8 @@ export function EventComposerSheet({
       status: isRepeatingOccurrence && statusOverride === undefined
         ? event!.status
         : statusOverride ?? status,
-      recurrenceFrequency: recurrence,
-      recurrenceEndDate: recurrence === 'NONE' ? null : recurrenceEndDate || null,
-      recurrenceInterval: recurrence === 'CUSTOM' ? recurrenceInterval : null,
-      recurrenceUnit: recurrence === 'CUSTOM' ? recurrenceUnit : null,
+      ...recurrenceFields,
+      recurrenceDaysOfWeek: recurrenceFields.recurrenceDaysOfWeek ?? [],
       reminderMinutesBefore,
       calendarId,
     };
@@ -575,20 +564,7 @@ export function EventComposerSheet({
         {allDay === 'no' && <DateTimeField label="Finishes at" value={endTime} mode="time" onChange={setEndTime} />}
       </View>
       <AppText variant="label">Repeat</AppText>
-      <ChoiceChips value={recurrence} onChange={value => { setRecurrence(value); if (value === 'NONE') setRecurrenceEndDate(''); }} options={[
-        { value: 'NONE' as const, label: 'Never' }, { value: 'DAILY' as const, label: 'Daily' },
-        { value: 'WEEKLY' as const, label: 'Weekly' }, { value: 'MONTHLY' as const, label: 'Monthly' },
-        { value: 'CUSTOM' as const, label: 'Custom' },
-      ]} />
-      {recurrence === 'CUSTOM' && (
-        <>
-          <AppInput label="Repeat every" value={String(recurrenceInterval)} onChangeText={value => setRecurrenceInterval(Number(value))} keyboardType="number-pad" />
-          <ChoiceChips value={recurrenceUnit} onChange={setRecurrenceUnit} options={[
-            { value: 'DAYS' as const, label: 'Days' }, { value: 'WEEKS' as const, label: 'Weeks' }, { value: 'MONTHS' as const, label: 'Months' },
-          ]} />
-        </>
-      )}
-      {recurrence !== 'NONE' && <DateTimeField label="Repeat until (optional)" value={recurrenceEndDate || date} mode="date" onChange={setRecurrenceEndDate} />}
+      <RepeatEditor value={repeat} startDate={isCalendarDate(date) ? date : ''} onChange={setRepeat} />
       <AppText variant="label">Reminder</AppText>
       <ChoiceChips value={reminder} onChange={chooseReminder} options={reminderOptions} />
       {reminder === 'custom' && (

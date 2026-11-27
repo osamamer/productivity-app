@@ -88,6 +88,10 @@ public class CalendarEvent {
     @Column(name = "recurrence_unit", length = 20)
     private RecurrenceUnit recurrenceUnit;
 
+    /** Comma-separated, Sunday first; only for a custom recurrence counted in weeks. */
+    @Column(name = "recurrence_days_of_week", length = 80)
+    private String recurrenceDaysOfWeek;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

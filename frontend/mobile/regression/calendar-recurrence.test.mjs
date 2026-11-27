@@ -134,3 +134,21 @@ test('hides a deleted occurrence while keeping later occurrences in the series',
     '2026-10-19',
   ]);
 });
+
+test('repeats every second week on chosen days, with weeks starting on Sunday', () => {
+  // Thursday 1 Oct 2026; Sunday 4 Oct opens the skipped week.
+  const event = timedWeeklyEvent({
+    startTime: '2026-10-01T10:00:00.000Z',
+    endTime: '2026-10-01T11:00:00.000Z',
+    recurrenceFrequency: 'CUSTOM',
+    recurrenceInterval: 2,
+    recurrenceUnit: 'WEEKS',
+    recurrenceDaysOfWeek: ['SUNDAY', 'THURSDAY'],
+    recurrenceEndDate: null,
+  });
+
+  const occurrences = expandCalendarEvent(event, new Date('2026-09-30T00:00:00.000Z'), new Date('2026-10-26T00:00:00.000Z'));
+
+  assert.deepEqual(occurrences.map(occurrence => occurrence.occurrenceDate), ['2026-10-01', '2026-10-11', '2026-10-15', '2026-10-25']);
+  assert.equal(occurrences[0].id, 'event-1');
+});

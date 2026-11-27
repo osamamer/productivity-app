@@ -1,5 +1,6 @@
 import { addDays, addMonths, differenceInCalendarDays, differenceInCalendarMonths, format, startOfDay } from 'date-fns';
 import type { CalendarEvent, CalendarEventStatus, RecurrenceFrequency, RecurrenceUnit } from '../../types/CalendarEvent.ts';
+import { weekdayOccurrencesBetween, type Weekday } from '../../../../shared/repeatRule.ts';
 
 export type CalendarEventOccurrence = {
     id: string;
@@ -102,6 +103,48 @@ function firstVisibleIndex(anchor: Date, rangeStart: Date, event: CalendarEvent,
     return Math.max(0, Math.floor((differenceInCalendarMonths(startOfDay(rangeStart), startOfDay(anchor)) - 1) / interval));
 }
 
+type OriginalStart = { start: Date; first: boolean };
+
+function weekdayRule(event: CalendarEvent): { days: Weekday[]; interval: number } | null {
+    const days = event.recurrenceDaysOfWeek ?? [];
+    if (event.recurrenceFrequency !== 'CUSTOM' || event.recurrenceUnit !== 'WEEKS' || days.length === 0) return null;
+    return { days, interval: recurrenceInterval(event) };
+}
+
+/**
+ * The original (unmoved) starts of the occurrences that can reach the expansion range, oldest first.
+ * `durationDays` widens the search backwards so a multi-day occurrence that began earlier is kept.
+ */
+function originalStarts(
+    event: CalendarEvent,
+    anchor: Date,
+    expansionRange: { start: Date; end: Date },
+    durationDays: number,
+): OriginalStart[] {
+    const starts: OriginalStart[] = [];
+    const rule = weekdayRule(event);
+    if (rule) {
+        const anchorKey = dateString(anchor);
+        const fromKey = dateString(addDays(startOfDay(expansionRange.start), -Math.max(1, durationDays)));
+        weekdayOccurrencesBetween(anchorKey, rule.days, rule.interval, fromKey, dateString(expansionRange.end))
+            .forEach(date => {
+                if (isAfterRecurrenceEnd(date, event.recurrenceEndDate)) return;
+                const [year, month, day] = date.split('-').map(Number);
+                const start = new Date(anchor);
+                start.setFullYear(year, month - 1, day);
+                if (start < expansionRange.end) starts.push({ start, first: date === anchorKey });
+            });
+        return starts;
+    }
+    for (let index = firstVisibleIndex(anchor, expansionRange.start, event, durationDays); ; index += 1) {
+        const start = occurrenceStart(anchor, event, index);
+        if (isAfterRecurrenceEnd(dateString(start), event.recurrenceEndDate)) break;
+        if (start >= expansionRange.end) break;
+        starts.push({ start, first: index === 0 });
+    }
+    return starts;
+}
+
 function dateString(date: Date): string {
     return format(date, 'yyyy-MM-dd');
 }
@@ -123,16 +166,12 @@ function allDayOccurrences(
         anchor,
     ) + 1;
     const expansionRange = rangeIncludingMovedOccurrences(event, rangeStart, rangeEnd);
-    const firstIndex = firstVisibleIndex(anchor, expansionRange.start, event, durationDays);
     const visibleRangeStart = startOfDay(rangeStart);
     const visibleRangeEnd = startOfDay(rangeEnd);
     const occurrences: CalendarEventOccurrence[] = [];
 
-    for (let index = firstIndex; ; index += 1) {
-        const originalStart = occurrenceStart(anchor, event, index);
+    for (const { start: originalStart, first } of originalStarts(event, anchor, expansionRange, durationDays)) {
         const occurrenceDate = dateString(originalStart);
-        if (isAfterRecurrenceEnd(occurrenceDate, event.recurrenceEndDate)) break;
-        if (originalStart >= expansionRange.end) break;
 
         const key = occurrenceKey(originalStart, occurrenceDate, true);
         const override = occurrenceOverride(event, key);
@@ -144,7 +183,7 @@ function allDayOccurrences(
             : addDays(originalStart, durationDays);
         if (end > visibleRangeStart && start < visibleRangeEnd && !occurrenceIsDeleted(event, key)) {
             occurrences.push({
-                id: index === 0 ? event.id : `${event.id}-${occurrenceDate}`,
+                id: first ? event.id : `${event.id}-${occurrenceDate}`,
                 occurrenceDate: dateString(start),
                 occurrenceKey: key,
                 start: dateString(start),
@@ -168,14 +207,11 @@ function timedOccurrences(
     const end = new Date(event.endTime);
     const durationMilliseconds = end.getTime() - anchor.getTime();
     const expansionRange = rangeIncludingMovedOccurrences(event, rangeStart, rangeEnd);
-    const firstIndex = firstVisibleIndex(anchor, expansionRange.start, event, 0);
     const occurrences: CalendarEventOccurrence[] = [];
+    const durationDays = Math.ceil(durationMilliseconds / 86_400_000);
 
-    for (let index = firstIndex; ; index += 1) {
-        const originalStart = occurrenceStart(anchor, event, index);
+    for (const { start: originalStart, first } of originalStarts(event, anchor, expansionRange, durationDays)) {
         const occurrenceDate = dateString(originalStart);
-        if (isAfterRecurrenceEnd(occurrenceDate, event.recurrenceEndDate)) break;
-        if (originalStart >= expansionRange.end) break;
 
         const originalEnd = new Date(originalStart.getTime() + durationMilliseconds);
         const key = occurrenceKey(originalStart, occurrenceDate, false);
@@ -190,7 +226,7 @@ function timedOccurrences(
         const occurrenceEnd = hasValidMove ? movedEnd : originalEnd;
         if (occurrenceEnd > rangeStart && start < rangeEnd && !occurrenceIsDeleted(event, key)) {
             occurrences.push({
-                id: index === 0 ? event.id : `${event.id}-${occurrenceDate}`,
+                id: first ? event.id : `${event.id}-${occurrenceDate}`,
                 occurrenceDate: dateString(start),
                 occurrenceKey: key,
                 start: start.toISOString(),

@@ -1,7 +1,9 @@
 package org.osama.event;
 
+import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 
 public class CalendarEventRequest {
     private String title;
@@ -18,6 +20,7 @@ public class CalendarEventRequest {
     private LocalDate recurrenceEndDate;
     private Integer recurrenceInterval;
     private RecurrenceUnit recurrenceUnit;
+    private List<DayOfWeek> recurrenceDaysOfWeek;
     private Integer reminderMinutesBefore;
     private boolean reminderMinutesBeforePresent;
     private String activityId;
@@ -56,6 +59,10 @@ public class CalendarEventRequest {
     public void setRecurrenceInterval(Integer recurrenceInterval) { this.recurrenceInterval = recurrenceInterval; }
     public RecurrenceUnit getRecurrenceUnit() { return recurrenceUnit; }
     public void setRecurrenceUnit(RecurrenceUnit recurrenceUnit) { this.recurrenceUnit = recurrenceUnit; }
+    public List<DayOfWeek> getRecurrenceDaysOfWeek() { return recurrenceDaysOfWeek; }
+    public void setRecurrenceDaysOfWeek(List<DayOfWeek> recurrenceDaysOfWeek) {
+        this.recurrenceDaysOfWeek = recurrenceDaysOfWeek;
+    }
     public Integer getReminderMinutesBefore() { return reminderMinutesBefore; }
     public void setReminderMinutesBefore(Integer reminderMinutesBefore) {
         this.reminderMinutesBefore = reminderMinutesBefore;

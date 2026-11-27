@@ -63,10 +63,8 @@ import { SubtaskNameField } from './task/SubtaskNameField';
 import { SubtaskBulkActions } from './task/SubtaskSelection';
 import { useSubtaskSelection } from './task/useSubtaskSelection';
 import { getTextOffsetAtPoint } from './task/taskTextCaret';
-import { AppDateField } from './input/AppPickerFields';
-import { TaskRecurrenceCustomOptions, TaskRecurrencePicker } from './task/TaskRecurrencePicker';
-import { TaskSeriesTimeField } from './task/TaskSeriesTimeField';
-import { TaskSchedulePicker } from './task/TaskSchedulePicker';
+import { TaskWhenField } from './task/when/TaskWhenField';
+import { scheduleOf, whenDraftFromSchedule, type WhenChange } from './task/when/whenModel';
 import { createAuthenticatedStompClient } from '../services/authenticatedStompClient';
 import { usePomodoroActions } from '../hooks/usePomodoro';
 import { getRuntimeUserPreferences, subscribeToUserPreferences } from '../services/userPreferenceStore';
@@ -78,7 +76,11 @@ import {
 import { getPomodoroProgressPercentage } from '../services/utils/pomodoroProgress';
 import { TaskOriginAdornment } from './task/TaskOriginAdornment';
 import type { TaskOriginKind } from './task/TaskOriginUtils';
-import { recurrenceDraftFromSeries } from '../services/utils/taskRecurrenceDraft';
+import {
+    draftFromRepeatRule,
+    recurrenceDraftFromSeries,
+    repeatRuleFromDraft,
+} from '../services/utils/taskRecurrenceDraft';
 import { PomodoroCompleteSummary } from './task-row/PomodoroCompleteSummary';
 import { PomodoroSetupForm } from './task-row/PomodoroSetupForm';
 import { PomodoroRunningControls } from './task-row/PomodoroRunningControls';
@@ -1162,16 +1164,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
         }
     };
 
-    const handleDateChange = (newDate: Date | null) => {
-        if (!canEditSchedule) return;
-        if (!scheduledDateEditActiveRef.current) {
-            scheduledDateBlurNotifiedRef.current = false;
-        }
-        scheduledDateEditActiveRef.current = true;
-        setScheduledDraft(newDate);
-        if (!newDate) commitDateChange(null);
-    };
-
     const handlePriorityChipClick = (event: React.MouseEvent<HTMLElement>, importance: number) => {
         event.stopPropagation();
         if (readOnly) return;
@@ -1252,22 +1244,62 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
             });
     };
 
-    const handleSeriesTimeChange = async (time: string) => {
+    const handleSeriesStartChange = async (startDateTime: string) => {
         const currentSeries = taskSeriesRef.current;
         if (!currentSeries?.active) return;
-        const date = currentSeries.startDateTime.slice(0, 10);
         const savedSeries = await taskService.updateTaskSeries(
             currentSeries.seriesId,
             recurrenceDraftRef.current,
             currentSeries.active,
             repeatSubtasksRef.current,
-            `${date}T${time}:00`,
+            startDateTime,
         );
         taskSeriesRef.current = savedSeries;
         const nextDraft = recurrenceDraftFromSeries(savedSeries);
         recurrenceDraftRef.current = nextDraft;
         setRecurrenceDraft(nextDraft);
         await onRefreshTasks?.();
+    };
+
+    const whenValue = whenDraftFromSchedule(
+        formatTaskDateTime(scheduledDraft),
+        task.reminderMinutesBefore ?? null,
+        repeatRuleFromDraft(recurrenceDraft),
+        repeatSubtasks,
+    );
+
+    const handleWhenSave = async (change: WhenChange) => {
+        if (!canEditSchedule) return;
+        const { next } = change;
+        const series = taskSeriesRef.current?.active ? taskSeriesRef.current : null;
+        const schedule = scheduleOf(next);
+        if (change.scheduleChanged) {
+            if (series && change.scheduleScope === 'all' && schedule) {
+                const startDate = next.date === whenValue.date ? series.startDateTime.slice(0, 10) : next.date;
+                await handleSeriesStartChange(`${startDate}T${next.time}:00`);
+            } else {
+                const date = schedule ? new Date(schedule) : null;
+                setScheduledDraft(date);
+                await commitDateChange(date);
+            }
+        }
+        const reminderForWholeSeries = Boolean(series) && change.reminderScope === 'all';
+        if (change.reminderChanged && !reminderForWholeSeries) {
+            await onUpdate(task.taskId, { reminderMinutesBefore: next.reminderMinutesBefore });
+        }
+        if (change.repeatChanged) {
+            repeatSubtasksRef.current = next.repeatSubtasks;
+            setRepeatSubtasks(next.repeatSubtasks);
+            handleRecurrenceChange(
+                draftFromRepeatRule(next.repeat, recurrenceDraftRef.current.timeZone),
+                schedule,
+            );
+            await recurrenceMutationRef.current;
+        }
+        if (change.reminderChanged && reminderForWholeSeries && series) {
+            await taskService.updateTaskSeriesReminder(series.seriesId, next.reminderMinutesBefore);
+            await onRefreshTasks?.();
+        }
     };
 
     const handleNameCommit = () => {
@@ -1337,8 +1369,6 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
     const detailsButtonDisabled = prefetchDetailsOnMount && !detailsReady && !taskHasCachedDetails;
     const detailsPanelOpen = expandedPanel === 'details'
         && (!prefetchDetailsOnMount || detailsReady || taskHasCachedDetails);
-    const showTimeOnlySchedule = Boolean(scheduledDraft)
-        && recurrenceDraft.recurrenceFrequency !== 'NONE';
     const handleRowSelection = (event: React.MouseEvent<HTMLElement>) => {
         onSelectionClick?.(task, event);
         onSelect?.(task);
@@ -1785,100 +1815,16 @@ export const FlatTaskRow = React.memo(function FlatTaskRow({
                         )}
                     </Box>
 
-                    {/* Scheduled date/time */}
                     <LocalizationProvider dateAdapter={AdapterDateFns}>
                         <Box>
-                            <Box
-                                sx={{
-                                    display: 'grid',
-                                    gridTemplateColumns: task.parentId || readOnly
-                                        ? 'minmax(0, 1fr)'
-                                        : { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 3fr) minmax(0, 1fr)' },
-                                    gap: 1.25,
-                                    alignItems: 'start',
-                                }}
-                            >
-                                <Box sx={{ minWidth: 0 }}>
-                                    <Collapse in={showTimeOnlySchedule} timeout={180} unmountOnExit>
-                                        <TaskSchedulePicker
-                                            label={scheduledDraft ? 'Scheduled' : 'Schedule'}
-                                            value={scheduledDraft}
-                                            savedValue={task.scheduledPerformDateTime ? new Date(task.scheduledPerformDateTime) : null}
-                                            timeOnly
-                                            onChange={handleDateChange}
-                                            onAccept={commitDateChange}
-                                            disabled={!canEditSchedule}
-                                        />
-                                    </Collapse>
-                                    <Collapse in={!showTimeOnlySchedule} timeout={180} unmountOnExit>
-                                        <TaskSchedulePicker
-                                            label={scheduledDraft ? 'Scheduled' : 'Schedule'}
-                                            value={scheduledDraft}
-                                            savedValue={task.scheduledPerformDateTime ? new Date(task.scheduledPerformDateTime) : null}
-                                            timeOnly={false}
-                                            onChange={handleDateChange}
-                                            onAccept={commitDateChange}
-                                            disabled={!canEditSchedule}
-                                        />
-                                    </Collapse>
-                                </Box>
-
-                                {!task.parentId && !readOnly && (
-                                    <TaskRecurrencePicker
-                                        value={recurrenceDraft}
-                                        onChange={handleRecurrenceChange}
-                                        showEndDate={false}
-                                        showCustomOptions={false}
-                                    />
-                                )}
-                            </Box>
-                            {!task.parentId && !readOnly && (
-                                <Collapse in={recurrenceDraft.recurrenceFrequency !== 'NONE'} timeout={180} unmountOnExit>
-                                    <Box>
-                                    {subtasks.length > 0 && (
-                                        <Box sx={{ mt: 1 }}>
-                                            <Checkbox checked={repeatSubtasks} size="small" inputProps={{ 'aria-label': 'Repeat subtasks with each occurrence' }}
-                                                onChange={event => {
-                                                    repeatSubtasksRef.current = event.target.checked;
-                                                    setRepeatSubtasks(event.target.checked);
-                                                    handleRecurrenceChange(recurrenceDraftRef.current);
-                                                }} />
-                                            <Typography component="span" variant="body2">Repeat subtasks with each occurrence</Typography>
-                                        </Box>
-                                    )}
-                                    <Box sx={{
-                                        mt: 1.25,
-                                        display: 'grid',
-                                        gridTemplateColumns: recurrenceDraft.recurrenceFrequency === 'CUSTOM'
-                                            ? { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) minmax(0, 1fr)' }
-                                            : 'minmax(0, 1fr)',
-                                        gap: 1.25,
-                                        alignItems: 'start',
-                                    }}>
-                                        {recurrenceDraft.recurrenceFrequency === 'CUSTOM' && (
-                                            <TaskRecurrenceCustomOptions
-                                                value={recurrenceDraft}
-                                                onChange={handleRecurrenceChange}
-                                            />
-                                        )}
-                                        <AppDateField
-                                            label="Repeat until (optional)"
-                                            value={recurrenceDraft.recurrenceEndDate ?? ''}
-                                            onChange={recurrenceEndDate => handleRecurrenceChange({
-                                                ...recurrenceDraft,
-                                                recurrenceEndDate: recurrenceEndDate || null,
-                                            })}
-                                        />
-                                    </Box>
-                                    {taskSeriesRef.current?.active && (
-                                        <TaskSeriesTimeField
-                                            startDateTime={taskSeriesRef.current.startDateTime}
-                                            onApply={handleSeriesTimeChange}
-                                        />
-                                    )}
-                                    </Box>
-                                </Collapse>
-                            )}
+                            <TaskWhenField
+                                value={whenValue}
+                                repeating={Boolean(taskSeriesRef.current?.active)}
+                                canRepeat={!task.parentId && !readOnly}
+                                showRepeatSubtasks={subtasks.length > 0}
+                                disabled={!canEditSchedule}
+                                onSave={handleWhenSave}
+                            />
                             {recurrenceError && (
                                 <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1, textAlign: 'left' }}>
                                     {recurrenceError}

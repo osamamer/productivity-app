@@ -1,3 +1,4 @@
+import type { Weekday } from '../../../shared/repeatRule.ts';
 export type RecurrenceFrequency = 'NONE' | 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'CUSTOM';
 export type RecurrenceUnit = 'DAYS' | 'WEEKS' | 'MONTHS';
 export type CalendarEventStatus = 'CONFIRMED' | 'TENTATIVE' | 'CANCELLED';
@@ -29,6 +30,8 @@ export type CalendarEvent = {
     recurrenceEndDate: string | null;
     recurrenceInterval: number | null;
     recurrenceUnit: RecurrenceUnit | null;
+    /** Only for a custom rule counted in weeks; Sunday first. */
+    recurrenceDaysOfWeek?: Weekday[] | null;
     cancelledOccurrenceKeys: string[];
     occurrenceOverrides: CalendarEventOccurrenceOverride[];
     reminderMinutesBefore: number | null;
@@ -65,6 +68,8 @@ export type CalendarEventInput = {
     recurrenceEndDate: string | null;
     recurrenceInterval: number | null;
     recurrenceUnit: RecurrenceUnit | null;
+    /** Only for a custom rule counted in weeks; Sunday first. */
+    recurrenceDaysOfWeek?: Weekday[] | null;
     reminderMinutesBefore: number | null;
 };
 

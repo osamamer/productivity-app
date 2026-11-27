@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: 101-calendar-event-recurrence-days
+      author: osama
+      comment: Weekdays for events that repeat every N weeks on chosen days
+      changes:
+        - addColumn:
+            tableName: calendar_event
+            columns:
+              - column:
+                  name: recurrence_days_of_week
+                  type: varchar(80)
+      rollback:
+        - dropColumn:
+            tableName: calendar_event
+            columnName: recurrence_days_of_week

@@ -861,7 +861,9 @@ export const taskService = {
     ): Promise<TaskSeries> {
         const response = await apiFetch(`${TASK_SERIES_URL}/${seriesId}`, {
             method: 'PATCH',
-            body: JSON.stringify({ ...recurrence, ...(active === undefined ? {} : { active }),
+            // An empty list clears chosen weekdays; leaving it out would keep the old ones.
+            body: JSON.stringify({ ...recurrence, recurrenceDaysOfWeek: recurrence.recurrenceDaysOfWeek ?? [],
+                ...(active === undefined ? {} : { active }),
                 ...(repeatSubtasks === undefined ? {} : { repeatSubtasks }),
                 ...(startDateTime === undefined ? {} : { startDateTime }) }),
             headers: {
@@ -892,6 +894,27 @@ export const taskService = {
         });
         if (!response.ok) {
             throw new Error('Failed to update task series priority');
+        }
+        const updatedSeries = await response.json() as TaskSeries;
+        clearTaskSeriesCache();
+        clearTaskDetailsCache();
+        invalidateTaskListCaches();
+        invalidateResource('tasks');
+        return updatedSeries;
+    },
+
+    /** Sets the reminder of every upcoming occurrence of the series; null turns it off. */
+    async updateTaskSeriesReminder(seriesId: string, reminderMinutesBefore: number | null): Promise<TaskSeries> {
+        const response = await apiFetch(`${TASK_SERIES_URL}/${seriesId}/reminder`, {
+            method: 'PATCH',
+            body: JSON.stringify({ reminderMinutesBefore }),
+            headers: {
+                'Content-Type': 'application/json; charset=UTF-8',
+                ...getAuthHeaders(),
+            },
+        });
+        if (!response.ok) {
+            throw new Error('Failed to update the series reminder');
         }
         const updatedSeries = await response.json() as TaskSeries;
         clearTaskSeriesCache();

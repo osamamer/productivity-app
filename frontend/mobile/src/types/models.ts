@@ -1,3 +1,5 @@
+import type { Weekday } from '../../../shared/repeatRule';
+
 export interface UserInfo {
   id: string;
   email: string;
@@ -51,7 +53,7 @@ export interface TaskSeries {
   createdAt: string;
   updatedAt: string;
   statLinked?: boolean;
-  recurrenceDaysOfWeek?: string[];
+  recurrenceDaysOfWeek?: Weekday[];
   repeatSubtasks?: boolean;
 }
 
@@ -285,6 +287,8 @@ export interface CalendarEvent {
   recurrenceEndDate: string | null;
   recurrenceInterval: number | null;
   recurrenceUnit: RecurrenceUnit | null;
+  /** Only for a custom rule counted in weeks; Sunday first. */
+  recurrenceDaysOfWeek?: Weekday[] | null;
   cancelledOccurrenceKeys?: string[];
   occurrenceOverrides?: CalendarEventOccurrenceOverride[];
   reminderMinutesBefore: number | null;

@@ -167,7 +167,9 @@ export const api = {
       recurrenceEndDate: string | null;
       recurrenceInterval: number | null;
       recurrenceUnit: 'DAYS' | 'WEEKS' | 'MONTHS' | null;
+      recurrenceDaysOfWeek?: string[] | null;
       timeZone: string;
+      repeatSubtasks?: boolean;
     }) => {
       const series = await json<TaskSeries>(`/api/v1/tasks/${taskId}/recurrence`, 'POST', recurrence);
       setCachedTaskSeries(taskId, series);
@@ -193,6 +195,13 @@ export const api = {
     },
     updateRecurrenceImportance: async (seriesId: string, importance: number) => {
       const updated = await json<TaskSeries>(`/api/v1/task-series/${seriesId}/importance`, 'PATCH', { importance });
+      updateCachedTaskSeries(updated);
+      invalidateResource('tasks');
+      return updated;
+    },
+    /** Sets the reminder of every upcoming occurrence; null turns it off. */
+    updateRecurrenceReminder: async (seriesId: string, reminderMinutesBefore: number | null) => {
+      const updated = await json<TaskSeries>(`/api/v1/task-series/${seriesId}/reminder`, 'PATCH', { reminderMinutesBefore });
       updateCachedTaskSeries(updated);
       invalidateResource('tasks');
       return updated;
